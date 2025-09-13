@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useCart } from "@/store/cart";
 import Link from "next/link";
+import CheckoutButton from "./CheckoutButton";
 
 export default function CartDrawer() {
   const [open, setOpen] = useState(false);
@@ -9,7 +10,10 @@ export default function CartDrawer() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "c") { e.preventDefault(); setOpen(o => !o); }
+      if (e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        setOpen((o) => !o);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -35,7 +39,7 @@ export default function CartDrawer() {
 
             <div className="flex-1 overflow-y-auto space-y-3">
               {items.length === 0 && <p className="opacity-70">Cart is empty.</p>}
-              {items.map(it => (
+              {items.map((it) => (
                 <div key={it.id} className="flex items-center gap-3 border border-white/10 rounded-xl p-3">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={it.image} alt={it.name} className="h-16 w-16 rounded-md object-cover" />
@@ -60,7 +64,8 @@ export default function CartDrawer() {
               </div>
               <div className="flex items-center gap-2">
                 <button className="inline-flex items-center justify-center rounded-xl px-4 py-2 border border-white/20 flex-1" onClick={clear}>Clear</button>
-                <button className="inline-flex items-center justify-center rounded-xl px-4 py-2 bg-vu-red text-white hover:opacity-90 flex-1" onClick={() => alert("Checkout coming soon")}>Checkout</button>
+                {/* Checkout wired */}
+                <CheckoutButton />
               </div>
               <Link href="/contact" className="block text-center text-sm underline opacity-80">Need help? Contact us</Link>
             </div>
