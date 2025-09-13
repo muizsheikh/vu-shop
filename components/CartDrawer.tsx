@@ -1,83 +1,136 @@
+// /components/CartDrawer.tsx
 "use client";
 
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useCart } from "@/store/cart";
-import { useState } from "react";
+import CheckoutButton from "./CheckoutButton";
 
 export default function CartDrawer() {
-  const items = useCart((s) => s.items);
-  const total = useCart((s) => s.total);
-  const remove = useCart((s) => s.remove);
-  const clear = useCart((s) => s.clear);
+  const [open, setOpen] = useState(false);
+  const { items, inc, dec, remove, clear, total, count } = useCart();
 
-  const [loading, setLoading] = useState(false);
-
-  async function handleCheckout() {
-    try {
-      setLoading(true);
-
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Checkout failed");
+  // Keyboard shortcut: press "c" to toggle cart
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        setOpen((o) => !o);
       }
-
-      const { url } = await res.json();
-      if (!url) throw new Error("No session URL returned.");
-
-      window.location.href = url;
-    } catch (err: any) {
-      console.error("Checkout error:", err);
-      alert("❌ " + (err.message || "Unable to checkout"));
-    } finally {
-      setLoading(false);
-    }
-  }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
-    <div className="p-4 flex flex-col gap-4">
-      <h2 className="font-bold text-lg">Your Cart</h2>
-
-      <ul className="flex flex-col gap-2">
-        {items.map((it) => (
-          <li key={it.slug} className="flex justify-between">
-            <span>
-              {it.name} × {it.qty}
-            </span>
-            <span>Rs {it.price * it.qty}</span>
-            <button
-              className="text-red-500 text-sm"
-              onClick={() => remove(it.slug)}
-            >
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      <div className="flex justify-between font-bold pt-2">
-        <span>Total:</span>
-        <span>Rs {total}</span>
-      </div>
-
+    <>
+      {/* Trigger in navbar/header */}
       <button
-        onClick={handleCheckout}
-        disabled={loading || items.length === 0}
-        className="w-full py-2 bg-green-600 text-white font-bold rounded-md hover:bg-green-700 disabled:opacity-50"
+        onClick={() => setOpen(true)}
+        className="inline-flex h-9 items-center justify-center rounded-xl bg-vu-red px-4 py-2 font-medium text-white transition hover:opacity-90 active:scale-95"
       >
-        {loading ? "Processing…" : "Checkout"}
+        Cart ({count()})
       </button>
 
-      <button
-        onClick={clear}
-        className="w-full py-2 border rounded-md text-gray-700 hover:bg-gray-100"
-      >
-        Clear Cart
-      </button>
-    </div>
+      {!open ? null : (
+        <div className="fixed inset-0 z-50">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
+
+          {/* Drawer */}
+          <aside className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-white/10 bg-[var(--bg)] p-4 text-[var(--fg)]">
+            {/* Header */}
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Your Cart</h2>
+              <button
+                onClick={() => setOpen(false)}
+                className="inline-flex items-center justify-center rounded-xl border border-white/20 px-3 py-2"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Items */}
+            <div className="flex-1 space-y-3 overflow-y-auto">
+              {items.length === 0 && <p className="opacity-70">Cart is empty.</p>}
+
+              {items.map((it) => (
+                <div
+                  key={it.id}
+                  className="flex items-center gap-3 rounded-xl border border-white/10 p-3"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={it.image}
+                    alt={it.name}
+                    className="h-16 w-16 rounded-md object-cover"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium">{it.name}</div>
+                    <div className="text-sm opacity-70">
+                      Rs {Number(it.price).toLocaleString()}
+                    </div>
+
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        className="rounded border border-white/20 px-2 py-1"
+                        onClick={() => dec(it.id)}
+                        aria-label="Decrease"
+                      >
+                        -
+                      </button>
+                      <span className="w-8 text-center">{it.qty}</span>
+                      <button
+                        className="rounded border border-white/20 px-2 py-1"
+                        onClick={() => inc(it.id)}
+                        aria-label="Increase"
+                      >
+                        +
+                      </button>
+
+                      <button
+                        className="ml-3 text-sm text-red-500"
+                        onClick={() => remove(it.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+              <div className="flex items-center justify-between text-lg">
+                <span>Total</span>
+                <span className="font-semibold">
+                  Rs {Number(total()).toLocaleString()}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={clear}
+                  className="inline-flex flex-1 items-center justify-center rounded-xl border border-white/20 px-4 py-2"
+                >
+                  Clear
+                </button>
+
+                {/* Stripe checkout */}
+                <CheckoutButton />
+              </div>
+
+              <Link
+                href="/contact"
+                className="block text-center text-sm underline opacity-80"
+              >
+                Need help? Contact us
+              </Link>
+            </div>
+          </aside>
+        </div>
+      )}
+    </>
   );
 }
