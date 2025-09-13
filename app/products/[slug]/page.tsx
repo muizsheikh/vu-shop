@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
-import { products, getBySlug } from "@/lib/products";
+import { getBySlug } from "@/lib/products";
 import { notFound } from "next/navigation";
 import AddToCartButton from "./ui";
+
+export const dynamic = "force-dynamic"; // ⬅️ prerender hata do (runtime pe render)
 
 const BASE = "https://vapeustad.com";
 
@@ -28,23 +30,32 @@ export async function generateMetadata(
       images: [img],
       type: "product",
     },
-    twitter: {
-      card: "summary_large_image",
-      title,
-      description: p.description,
-      images: [img],
-    },
+    twitter: { card: "summary_large_image", title, description: p.description, images: [img] },
   };
-}
-
-/** Pre-render product pages */
-export function generateStaticParams() {
-  return products.map(p => ({ slug: p.slug }));
 }
 
 export default function ProductDetail({ params }: { params: { slug: string } }) {
   const p = getBySlug(params.slug);
   if (!p) return notFound();
+
+  // JSON-LD ko server-safe tarike se prepare karein
+  const imgAbs = p.image.startsWith("http") ? p.image : `${BASE}${p.image}`;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: p.name,
+    description: p.description,
+    image: [imgAbs],
+    url: `${BASE}/products/${p.slug}`,
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "PKR",
+      price: p.price.toString(),
+      availability: "https://schema.org/InStock",
+      url: `${BASE}/products/${p.slug}`,
+    },
+    brand: { "@type": "Brand", name: "Vape Ustad" },
+  };
 
   return (
     <>
@@ -72,26 +83,8 @@ export default function ProductDetail({ params }: { params: { slug: string } }) 
       <script
         type="application/ld+json"
         suppressHydrationWarning
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "Product",
-            name: p.name,
-            description: p.description,
-            image: [p.image.startsWith("http") ? p.image : `${BASE}${p.image}`],
-            url: `${BASE}/products/${p.slug}`,
-            offers: {
-              "@type": "Offer",
-              priceCurrency: "PKR",
-              price: p.price.toString(),
-              availability: "https://schema.org/InStock",
-              url: `${BASE}/products/${p.slug}`,
-            },
-            brand: { "@type": "Brand", name: "Vape Ustad" },
-          }),
-        }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
     </>
   );
 }
-
