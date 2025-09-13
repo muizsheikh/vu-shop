@@ -1,19 +1,28 @@
+// /store/cart.ts
 "use client";
+
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
 export type CartItem = {
-  id: string;
-  slug: string;
+  id: string;       // usually slug
+  slug?: string;
+  name: string;
+  price: number;    // PKR
+  image?: string;
+  qty: number;
+};
+
+type ProductLike = {
+  slug?: string;
   name: string;
   price: number;
-  image: string;
-  qty: number;
+  image?: string;
 };
 
 type CartState = {
   items: CartItem[];
-  add: (item: Omit<CartItem, "qty">, qty?: number) => void;
+  add: (p: ProductLike, qty?: number) => void;
   inc: (id: string) => void;
   dec: (id: string) => void;
   remove: (id: string) => void;
@@ -26,20 +35,73 @@ export const useCart = create<CartState>()(
   persist(
     (set, get) => ({
       items: [],
-      add: (item, qty = 1) => {
-        const next = [...get().items];
-        const i = next.findIndex(x => x.id === item.id);
-        if (i >= 0) next[i].qty += qty;
-        else next.push({ ...item, qty });
-        set({ items: next });
+
+      // Add or increase quantity
+      add: (p, qty = 1) => {
+        set((state) => {
+          const id = p.slug || p.name;
+          const idx = state.items.findIndex((it) => it.id === id);
+          if (idx >= 0) {
+            const next = [...state.items];
+            next[idx] = { ...next[idx], qty: next[idx].qty + Math.max(1, qty) };
+            return { items: next };
+          }
+          const item: CartItem = {
+            id,
+            slug: p.slug,
+            name: p.name,
+            price: Number(p.price) || 0,
+            image: p.image,
+            qty: Math.max(1, qty),
+          };
+          return { items: [...state.items, item] };
+        });
       },
-      inc: id => set({ items: get().items.map(x => x.id === id ? { ...x, qty: x.qty + 1 } : x) }),
-      dec: id => set({ items: get().items.map(x => x.id === id ? { ...x, qty: Math.max(1, x.qty - 1) } : x) }),
-      remove: id => set({ items: get().items.filter(x => x.id !== id) }),
+
+      // Increase qty by 1
+      inc: (id) =>
+        set((state) => ({
+          items: state.items.map((it) =>
+            it.id === id ? { ...it, qty: it.qty + 1 } : it
+          ),
+        })),
+
+      // Decrease qty (remove if becomes 0)
+      dec: (id) =>
+        set((state) => {
+          const it = state.items.find((i) => i.id === id);
+          if (!it) return {} as any;
+          if (it.qty <= 1) {
+            return { items: state.items.filter((i) => i.id !== id) };
+          }
+          return {
+            items: state.items.map((i) =>
+              i.id === id ? { ...i, qty: i.qty - 1 } : i
+            ),
+          };
+        }),
+
+      // Remove item entirely
+      remove: (id) =>
+        set((state) => ({ items: state.items.filter((i) => i.id !== id) })),
+
+      // Empty cart
       clear: () => set({ items: [] }),
-      total: () => get().items.reduce((s, x) => s + x.price * x.qty, 0),
-      count: () => get().items.reduce((s, x) => s + x.qty, 0),
+
+      // Sum helpers
+      total: () => get().items.reduce((sum, it) => sum + it.price * it.qty, 0),
+      count: () => get().items.reduce((sum, it) => sum + it.qty, 0),
     }),
-    { name: "vu-cart", storage: createJSONStorage(() => localStorage) }
+    {
+      name: "vu-cart",
+      version: 1,
+      // Persist only on client side
+      storage:
+        typeof window !== "undefined"
+          ? createJSONStorage(() => localStorage)
+          : undefined,
+      // Persist only items (not functions)
+      partialize: (state) => ({ items: state.items }),
+    }
   )
 );
