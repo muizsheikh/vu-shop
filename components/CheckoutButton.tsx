@@ -1,10 +1,11 @@
+// /components/CheckoutButton.tsx
 "use client";
 
 import { useState } from "react";
-import { useCart } from "@/store/cart";
+import { useCartStore } from "@/store/cart";
 
 export default function CheckoutButton() {
-  const items = useCart((s) => s.items);
+  const items = useCartStore((s) => s.items);
   const [loading, setLoading] = useState(false);
 
   async function checkout() {
@@ -12,27 +13,36 @@ export default function CheckoutButton() {
 
     setLoading(true);
     try {
-      // CartItem -> API payload
-      const toSend = items.map(({ slug, name, price, image, qty }) => ({
-        slug,
-        name,
-        price,
-        image,
-        qty,
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+
+      // Stripe-ready payload
+      const line_items = items.map((it) => ({
+        price_data: {
+          currency: "pkr",
+          product_data: {
+            name: it.name,
+            images:
+              it.image && baseUrl
+                ? [`${baseUrl}${it.image}`] // ✅ prepend base URL
+                : [],
+          },
+          unit_amount: Math.round(it.price * 100), // PKR → paisa
+        },
+        quantity: it.qty,
       }));
 
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: toSend }),
+        body: JSON.stringify({ line_items }),
       });
 
       const data = await res.json();
       if (res.ok && data.url) {
-        window.location.href = data.url; // Stripe Checkout
+        window.location.href = data.url; // redirect to Stripe
       } else {
         alert("Checkout failed. Please try again.");
-        console.error(data);
+        console.error("Checkout error:", data);
       }
     } catch (e) {
       alert("Checkout error. See console.");

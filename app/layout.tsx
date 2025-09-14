@@ -3,6 +3,7 @@ import "@/app/globals.css";
 import Providers from "@/components/Providers";
 import Navbar from "@/components/Navbar";
 import Shortcuts from "@/components/Shortcuts";
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://vapeustad.com"),
@@ -38,6 +39,7 @@ export default function RootLayout({
           <Navbar />
           <main className="mx-auto max-w-[1200px] px-4 py-8">{children}</main>
           <Shortcuts />
+          <Toaster richColors position="top-center" />
         </Providers>
       </body>
     </html>

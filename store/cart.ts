@@ -5,7 +5,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
 export type CartItem = {
-  id: string;       // usually slug
+  id: string;       // usually slug or name
   slug?: string;
   name: string;
   price: number;    // PKR
@@ -31,12 +31,13 @@ type CartState = {
   count: () => number;
 };
 
-export const useCart = create<CartState>()(
+// ✅ unified hook name = useCartStore
+export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
       items: [],
 
-      // Add or increase quantity
+      // Add new item or increase quantity
       add: (p, qty = 1) => {
         set((state) => {
           const id = p.slug || p.name;
@@ -66,7 +67,7 @@ export const useCart = create<CartState>()(
           ),
         })),
 
-      // Decrease qty (remove if becomes 0)
+      // Decrease qty (remove if 0)
       dec: (id) =>
         set((state) => {
           const it = state.items.find((i) => i.id === id);
@@ -81,26 +82,25 @@ export const useCart = create<CartState>()(
           };
         }),
 
-      // Remove item entirely
+      // Remove entire item
       remove: (id) =>
         set((state) => ({ items: state.items.filter((i) => i.id !== id) })),
 
       // Empty cart
       clear: () => set({ items: [] }),
 
-      // Sum helpers
-      total: () => get().items.reduce((sum, it) => sum + it.price * it.qty, 0),
+      // Helpers
+      total: () =>
+        get().items.reduce((sum, it) => sum + it.price * it.qty, 0),
       count: () => get().items.reduce((sum, it) => sum + it.qty, 0),
     }),
     {
       name: "vu-cart",
       version: 1,
-      // Persist only on client side
       storage:
         typeof window !== "undefined"
           ? createJSONStorage(() => localStorage)
           : undefined,
-      // Persist only items (not functions)
       partialize: (state) => ({ items: state.items }),
     }
   )

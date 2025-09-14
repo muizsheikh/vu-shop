@@ -1,11 +1,19 @@
+// /app/products/[slug]/page.tsx
 import { getBySlug } from "@/lib/products";
 import { notFound } from "next/navigation";
 import AddToCartButton from "./ui";
 
 export const dynamic = "force-dynamic"; // runtime render, SSG off
 
-export default function ProductDetail({ params }: { params: { slug: string } }) {
-  const p = getBySlug(params.slug);
+export default async function ProductDetail({
+  params,
+}: {
+  params: { slug: string };
+}) {
+  // ✅ params async hote hain
+  const { slug } = await params;
+
+  const p = getBySlug(slug);
   if (!p) return notFound();
 
   return (

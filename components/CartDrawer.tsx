@@ -3,12 +3,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useCart } from "@/store/cart";
+import { useCartStore } from "@/store/cart"; // ✅ updated
 import CheckoutButton from "./CheckoutButton";
 
 export default function CartDrawer() {
   const [open, setOpen] = useState(false);
-  const { items, inc, dec, remove, clear, total, count } = useCart();
+  const { items, inc, dec, remove, clear, total, count } = useCartStore();
+
+  // Hydration-safe flag
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
 
   // Keyboard shortcut: press "c" to toggle cart
   useEffect(() => {
@@ -29,13 +33,16 @@ export default function CartDrawer() {
         onClick={() => setOpen(true)}
         className="inline-flex h-9 items-center justify-center rounded-xl bg-vu-red px-4 py-2 font-medium text-white transition hover:opacity-90 active:scale-95"
       >
-        Cart ({count()})
+        Cart ({ready ? count() : 0})
       </button>
 
       {!open ? null : (
         <div className="fixed inset-0 z-50">
           {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setOpen(false)}
+          />
 
           {/* Drawer */}
           <aside className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-white/10 bg-[var(--bg)] p-4 text-[var(--fg)]">
@@ -52,7 +59,9 @@ export default function CartDrawer() {
 
             {/* Items */}
             <div className="flex-1 space-y-3 overflow-y-auto">
-              {items.length === 0 && <p className="opacity-70">Cart is empty.</p>}
+              {items.length === 0 && (
+                <p className="opacity-70">Cart is empty.</p>
+              )}
 
               {items.map((it) => (
                 <div
