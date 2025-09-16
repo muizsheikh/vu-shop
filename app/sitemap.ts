@@ -1,14 +1,12 @@
-import type { MetadataRoute } from "next";
-import { products } from "@/lib/products";
+import { MetadataRoute } from "next";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const base = "https://vapeustad.com";
   return [
-    { url: `${base}/`, lastModified: new Date() },
-    { url: `${base}/contact`, lastModified: new Date() },
-    ...products.map(p => ({
-      url: `${base}/products/${p.slug}`,
+    {
+      url: "https://vapeustad.com",
       lastModified: new Date(),
-    })),
+      changeFrequency: "daily",
+      priority: 1.0,
+    },
   ];
 }
