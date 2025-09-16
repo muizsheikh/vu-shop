@@ -1,14 +1,8 @@
-import { MetadataRoute } from "next";
+import type { MetadataRoute } from "next";
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [
-      {
-        userAgent: "*",
-        allow: "/",
-        disallow: ["/api/", "/app/"], // tumhari site ke hisab se adjust karo
-      },
-    ],
+    rules: [{ userAgent: "*", allow: "/" }],
     sitemap: "https://vapeustad.com/sitemap.xml",
   };
 }
