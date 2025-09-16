@@ -73,10 +73,21 @@ export async function createSalesOrder(args: {
   stripe_session_id?: string;
   note?: string;
 }) {
-  const body = {
+  // Sales Order date = today
+  const today = new Date();
+  const soDate = today.toISOString().slice(0, 10);
+
+  // Delivery date = +1 day (always after SO date)
+  const delivery = new Date(today);
+  delivery.setDate(today.getDate() + 1);
+  const deliveryDate = delivery.toISOString().slice(0, 10);
+
+  const body: any = {
+    transaction_date: soDate,
     customer: args.customer_name,
-    delivery_date: new Date().toISOString().slice(0, 10),
-    currency: args.currency || undefined,
+    delivery_date: deliveryDate,
+    currency: args.currency || "PKR",
+    conversion_rate: 1,
     items: [
       {
         item_code: DEFAULT_ITEM_CODE,
