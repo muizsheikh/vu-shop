@@ -1,37 +1,208 @@
-import ProductCard from "@/components/ProductCard";
-import { products } from "@/lib/products";
-import Link from "next/link";
+"use client";
 
-export default function HomePage() {
+import Image from "next/image";
+import Link from "next/link";
+import ProductCard from "@/components/ProductCard";
+import useSWR from "swr";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
+// Simple fetcher for ERP API
+const fetcher = (url: string) => fetch(url).then(res => res.json());
+
+/** ---------------- Hero Slider ---------------- **/
+function HeroSlider() {
+  // Add/remove banner images here
+  const slides = [
+    "/images/banners/banner1.jpg",
+    "/images/banners/banner2.jpg",
+    "/images/banners/banner3.jpg",
+    "/images/banners/banner4.jpg",
+    "/images/banners/banner5.jpg",
+  ].filter(Boolean);
+
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const timerRef = useRef<number | null>(null);
+  const len = slides.length;
+
+  // Auto-advance
+  useEffect(() => {
+    if (len <= 1) return;
+    if (timerRef.current) window.clearInterval(timerRef.current);
+    if (!paused) {
+      timerRef.current = window.setInterval(() => {
+        setIndex(i => (i + 1) % len);
+      }, 4500);
+    }
+    return () => {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+    };
+  }, [len, paused]);
+
+  // Manual controls
+  const prev = () => setIndex(i => (i - 1 + len) % len);
+  const next = () => setIndex(i => (i + 1) % len);
+
+  // Touch swipe (basic)
+  const startX = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX;
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (startX.current == null) return;
+    const delta = e.changedTouches[0].clientX - startX.current;
+    if (Math.abs(delta) > 40) {
+      if (delta > 0) prev();
+      else next();
+    }
+    startX.current = null;
+  };
+
   return (
-    <div className="space-y-10">
-      {/* Hero */}
-      <section className="relative overflow-hidden rounded-2xl border border-black/5 dark:border-white/10 bg-gradient-to-br from-vu-black via-zinc-900 to-vu-black text-white">
-        <div className="p-10 md:p-16">
-          <p className="uppercase tracking-widest text-xs opacity-80">Vape Ustad</p>
-          <h1 className="mt-2 text-3xl md:text-5xl font-extrabold">Premium Vape Store — Black / Red / White</h1>
-          <p className="mt-3 opacity-80 max-w-2xl">Discover curated devices, coils, and e-liquids. Dark mode first, blazing fast, made in Next.js.</p>
-          <div className="mt-6 flex gap-3">
-            <Link href="#catalog"
-  className="inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium transition active:scale-95 bg-vu-red text-white hover:opacity-90">
-  Browse Products
-</Link>
-            <Link href="/contact"
-  className="inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium transition active:scale-95 border border-vu-red text-vu-red hover:bg-vu-red hover:text-white">
-  Contact
-</Link>
+    <section
+      className="relative w-screen left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] select-none"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      aria-label="Hero banner slider"
+    >
+      <div className="relative w-screen h-[60vh] md:h-[80vh] overflow-hidden">
+        {/* Slides */}
+        {slides.map((src, i) => (
+          <div
+            key={src + i}
+            className={`absolute inset-0 transition-opacity duration-700 ${i === index ? "opacity-100" : "opacity-0"}`}
+            aria-hidden={i !== index}
+          >
+            <Image
+              src={src}
+              alt={`Banner ${i + 1}`}
+              fill
+              className="object-cover"
+              priority={i === 0}
+            />
           </div>
+        ))}
+
+        {/* Prev/Next */}
+        {len > 1 && (
+          <>
+            <button
+              onClick={prev}
+              className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 hover:bg-black/60 p-2 text-white backdrop-blur"
+              aria-label="Previous slide"
+            >
+              <ChevronLeft />
+            </button>
+            <button
+              onClick={next}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 hover:bg-black/60 p-2 text-white backdrop-blur"
+              aria-label="Next slide"
+            >
+              <ChevronRight />
+            </button>
+          </>
+        )}
+
+        {/* Dots */}
+        {len > 1 && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setIndex(i)}
+                aria-label={`Go to slide ${i + 1}`}
+                className={`h-2.5 w-2.5 rounded-full transition ${
+                  i === index ? "bg-white" : "bg-white/50 hover:bg-white/80"
+                }`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** ---------------- Page ---------------- **/
+export default function HomePage() {
+  const { data } = useSWR("/api/products", fetcher);
+  const products = data?.products || [];
+
+  return (
+    <div className="space-y-16">
+      {/* Hero Slider */}
+      <HeroSlider />
+
+      {/* Collections */}
+      <section id="collections" className="space-y-8">
+        <h2 className="text-center text-2xl font-bold">Shop Our Collections</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
+          {[
+            { name: "Devices", img: "/images/categories/devices.png" },
+            { name: "Coils", img: "/images/categories/coils.png" },
+            { name: "E-Liquids", img: "/images/categories/eliquids.png" },
+            { name: "Disposables", img: "/images/categories/disposables.png" },
+          ].map(c => (
+            <Link
+              key={c.name}
+              href={`/products?group=${encodeURIComponent(c.name)}`}
+              className="flex flex-col items-center gap-2"
+            >
+              <div className="w-28 h-28 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center overflow-hidden">
+                <Image
+                  src={c.img}
+                  alt={c.name}
+                  width={112}
+                  height={112}
+                  className="object-cover w-full h-full"
+                />
+              </div>
+              <span className="font-medium">{c.name}</span>
+            </Link>
+          ))}
         </div>
       </section>
 
-      {/* Grid */}
-      <section id="catalog" className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Featured</h2>
-          <p className="opacity-70 text-sm">Demo list — 4 items</p>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {products.map(p => <ProductCard key={p.id} p={p} />)}
+      {/* Brands + New Arrivals */}
+      <section className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        {/* Brands Sidebar */}
+        <aside className="lg:col-span-1 space-y-4">
+          <div className="rounded-xl border border-black/10 dark:border-white/10 p-6">
+            <h3 className="text-lg font-semibold mb-4">Brands</h3>
+            <ul className="space-y-2 text-sm">
+              {["Oxva", "Aspire", "Uwell Caliburn", "Voopoo", "Freemax"].map(b => (
+                <li key={b}>
+                  <Link
+                    href={`/products?brand=${encodeURIComponent(b)}`}
+                    className="hover:text-vu-red"
+                  >
+                    {b}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+
+        {/* New Arrivals Grid */}
+        <div className="lg:col-span-3 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">New Arrivals</h2>
+            <Link
+              href="/products"
+              className="text-sm text-vu-red hover:underline"
+            >
+              View All
+            </Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {products.slice(0, 6).map((p: any) => (
+              <ProductCard key={p.id} p={p} />
+            ))}
+          </div>
         </div>
       </section>
     </div>

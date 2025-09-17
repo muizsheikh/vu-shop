@@ -3,8 +3,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useCartStore } from "@/store/cart"; // ✅ updated
-import CheckoutButton from "./CheckoutButton";
+import { useCartStore } from "@/store/cart";
 
 export default function CartDrawer() {
   const [open, setOpen] = useState(false);
@@ -126,8 +125,14 @@ export default function CartDrawer() {
                   Clear
                 </button>
 
-                {/* Stripe checkout */}
-                <CheckoutButton />
+                {/* Go to Checkout Page */}
+                <Link
+                  href="/checkout"
+                  onClick={() => setOpen(false)}
+                  className="inline-flex flex-1 items-center justify-center rounded-xl bg-vu-red px-4 py-2 font-medium text-white transition hover:opacity-90 active:scale-95 text-center"
+                >
+                  Checkout
+                </Link>
               </div>
 
               <Link

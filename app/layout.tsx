@@ -1,3 +1,4 @@
+// /app/layout.tsx
 import type { Metadata } from "next";
 import "@/app/globals.css";
 import Providers from "@/components/Providers";
@@ -39,7 +40,8 @@ export default function RootLayout({
           <Navbar />
           <main className="mx-auto max-w-[1200px] px-4 py-8">{children}</main>
           <Shortcuts />
-          <Toaster richColors position="top-center" />
+          {/* Global toast portal */}
+          <Toaster richColors position="top-center" closeButton />
         </Providers>
       </body>
     </html>
