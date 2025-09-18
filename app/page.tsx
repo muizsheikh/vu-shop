@@ -4,8 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
 import useSWR from "swr";
-import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation"; // ✅ added
+import { useEffect, useRef, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -48,10 +48,7 @@ function HeroSlider() {
   const onTouchEnd = (e: React.TouchEvent) => {
     if (startX.current == null) return;
     const delta = e.changedTouches[0].clientX - startX.current;
-    if (Math.abs(delta) > 40) {
-      if (delta > 0) prev();
-      else next();
-    }
+    if (Math.abs(delta) > 40) (delta > 0 ? prev() : next());
     startX.current = null;
   };
 
@@ -68,18 +65,10 @@ function HeroSlider() {
         {slides.map((src, i) => (
           <div
             key={src + i}
-            className={`absolute inset-0 transition-opacity duration-700 ${
-              i === index ? "opacity-100" : "opacity-0"
-            }`}
+            className={`absolute inset-0 transition-opacity duration-700 ${i === index ? "opacity-100" : "opacity-0"}`}
             aria-hidden={i !== index}
           >
-            <Image
-              src={src}
-              alt={`Banner ${i + 1}`}
-              fill
-              className="object-cover"
-              priority={i === 0}
-            />
+            <Image src={src} alt={`Banner ${i + 1}`} fill className="object-cover" priority={i === 0} />
           </div>
         ))}
 
@@ -109,11 +98,7 @@ function HeroSlider() {
                 key={i}
                 onClick={() => setIndex(i)}
                 aria-label={`Go to slide ${i + 1}`}
-                className={`h-2.5 w-2.5 rounded-full transition ${
-                  i === index
-                    ? "bg-white"
-                    : "bg-white/50 hover:bg-white/80"
-                }`}
+                className={`h-2.5 w-2.5 rounded-full transition ${i === index ? "bg-white" : "bg-white/50 hover:bg-white/80"}`}
               />
             ))}
           </div>
@@ -123,42 +108,22 @@ function HeroSlider() {
   );
 }
 
-/** ---------------- Page ---------------- **/
-export default function HomePage() {
+/** ---------------- HomeInner (uses useSearchParams) ---------------- **/
+function HomeInner() {
   const { data } = useSWR("/api/products", fetcher);
   const products = data?.products || [];
 
-  const params = useSearchParams();              // ✅ define params
-  const activeBrand = params.get("brand") || ""; // ✅ active brand
+  const params = useSearchParams(); // ✅ useSearchParams ONLY inside Suspense
+  const activeBrand = (params.get("brand") || "").toLowerCase();
 
   const BRANDS = [
-    "Aspire",
-    "Uwell",
-    "Freemax",
-    "GeekVape",
-    "KUMIHO",
-    "Lost Vape",
-    "Oxva",
-    "PAVA",
-    "ROMIO",
-    "SMOK",
-    "Vaporesso",
-    "Voopoo",
-    "Yozo",
-    "TOKYO DISPOSABLE",
-    "H-ONE",
-    "Used Pods",
-    "Rincoe",
-    "Reymont",
-    "Chinese Pods",
-    "WOMO",
+    "Aspire","Uwell","Freemax","GeekVape","KUMIHO","Lost Vape","Oxva","PAVA",
+    "ROMIO","SMOK","Vaporesso","Voopoo","Yozo","TOKYO DISPOSABLE","H-ONE",
+    "Used Pods","Rincoe","Reymont","Chinese Pods","WOMO",
   ];
 
   return (
     <div className="space-y-16">
-      {/* Hero Slider */}
-      <HeroSlider />
-
       {/* Collections (Fixed 4 groups) */}
       <section id="collections" className="space-y-8">
         <h2 className="text-center text-2xl font-bold">Shop Our Collections</h2>
@@ -169,19 +134,9 @@ export default function HomePage() {
             { name: "E-Liquids", img: "/images/categories/eliquids.png" },
             { name: "Disposables", img: "/images/categories/disposables.png" },
           ].map((c) => (
-            <Link
-              key={c.name}
-              href={`/products?group=${encodeURIComponent(c.name)}`}
-              className="flex flex-col items-center gap-2"
-            >
+            <Link key={c.name} href={`/products?group=${encodeURIComponent(c.name)}`} className="flex flex-col items-center gap-2">
               <div className="w-28 h-28 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center overflow-hidden">
-                <Image
-                  src={c.img}
-                  alt={c.name}
-                  width={112}
-                  height={112}
-                  className="object-cover w-full h-full"
-                />
+                <Image src={c.img} alt={c.name} width={112} height={112} className="object-cover w-full h-full" />
               </div>
               <span className="font-medium">{c.name}</span>
             </Link>
@@ -197,15 +152,13 @@ export default function HomePage() {
             <h3 className="text-lg font-semibold mb-4">Brands</h3>
             <div className="flex flex-col gap-2">
               {BRANDS.map((b) => {
-                const isActive = activeBrand.toLowerCase() === b.toLowerCase();
+                const isActive = activeBrand === b.toLowerCase();
                 return (
                   <Link
                     key={b}
                     href={`/products?brand=${encodeURIComponent(b)}`}
                     className={`block w-full px-3 py-2 rounded-lg text-sm text-center transition ${
-                      isActive
-                        ? "bg-vu-red text-white font-semibold"
-                        : "bg-zinc-900 hover:bg-zinc-800 text-gray-300"
+                      isActive ? "bg-vu-red text-white font-semibold" : "bg-zinc-900 hover:bg-zinc-800 text-gray-300"
                     }`}
                   >
                     {b}
@@ -220,10 +173,7 @@ export default function HomePage() {
         <div className="lg:col-span-3 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">New Arrivals</h2>
-            <Link
-              href="/products"
-              className="text-sm text-vu-red hover:underline"
-            >
+            <Link href="/products" className="text-sm text-vu-red hover:underline">
               View All
             </Link>
           </div>
@@ -234,6 +184,18 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+/** ---------------- Page (wrap inner with Suspense) ---------------- **/
+export default function HomePage() {
+  return (
+    <div className="space-y-16">
+      <HeroSlider />
+      <Suspense fallback={<div className="py-20 text-center">Loading…</div>}>
+        <HomeInner />
+      </Suspense>
     </div>
   );
 }
