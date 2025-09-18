@@ -1,94 +1,248 @@
 "use client";
 
-import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
-import useSWR from "swr";
+import Image from "next/image";
+import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
-
-type Product = {
-  id: string;
-  name: string;
-  image: string | null;
-  price: number | null;
-  stock_qty?: number | null;
-  in_stock?: boolean;
-  item_group?: string | null;
-  brand?: string | null;
-};
+import useSWR from "swr";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-function ProductsInner() {
-  const params = useSearchParams();
-  const brand = params.get("brand") || "";
-  const group = params.get("group") || "";
-  const q = params.get("q") || "";
-  const page = params.get("page") || "1";
+/** ---------------- Hero Slider ---------------- **/
+function HeroSlider() {
+  const slides = [
+    "/images/banners/banner1.jpg",
+    "/images/banners/banner2.jpg",
+    "/images/banners/banner3.jpg",
+    "/images/banners/banner4.jpg",
+    "/images/banners/banner5.jpg",
+  ].filter(Boolean);
 
-  const apiUrl = `/api/products?brand=${encodeURIComponent(
-    brand
-  )}&group=${encodeURIComponent(group)}&q=${encodeURIComponent(
-    q
-  )}&page=${page}`;
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const timerRef = useRef<number | null>(null);
+  const len = slides.length;
 
-  const { data, error, isLoading } = useSWR(apiUrl, fetcher);
+  useEffect(() => {
+    if (len <= 1) return;
+    if (timerRef.current) window.clearInterval(timerRef.current);
+    if (!paused) {
+      timerRef.current = window.setInterval(() => {
+        setIndex((i) => (i + 1) % len);
+      }, 4500);
+    }
+    return () => {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+    };
+  }, [len, paused]);
 
-  if (error) {
-    return (
-      <div className="mx-auto max-w-2xl text-center">
-        <h1 className="text-2xl font-bold">Products</h1>
-        <p className="mt-2 opacity-80">Error loading products.</p>
-      </div>
-    );
-  }
+  const prev = () => setIndex((i) => (i - 1 + len) % len);
+  const next = () => setIndex((i) => (i + 1) % len);
 
-  if (isLoading || !data) {
-    return (
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-48 animate-pulse rounded-xl bg-gray-800/40"
-          />
-        ))}
-      </div>
-    );
-  }
-
-  const products: Product[] = data.products || [];
-
-  if (!products.length) {
-    return (
-      <div className="mx-auto max-w-2xl text-center">
-        <h1 className="text-2xl font-bold">Products</h1>
-        <p className="mt-2 opacity-80">No products found for this filter.</p>
-      </div>
-    );
-  }
-
-  const sorted = [...products].sort((a, b) => {
-    const ai = a.in_stock === false || a.stock_qty === 0 ? 1 : 0;
-    const bi = b.in_stock === false || b.stock_qty === 0 ? 1 : 0;
-    if (ai !== bi) return ai - bi;
-    return a.name.localeCompare(b.name);
-  });
+  const startX = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX;
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (startX.current == null) return;
+    const delta = e.changedTouches[0].clientX - startX.current;
+    if (Math.abs(delta) > 40) {
+      if (delta > 0) prev();
+      else next();
+    }
+    startX.current = null;
+  };
 
   return (
-    <div>
-      <h1 className="mb-4 text-2xl font-bold">Products</h1>
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        {sorted.map((p) => (
-          <ProductCard key={p.id} p={p} />
+    <section
+      className="relative w-screen left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] select-none"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      aria-label="Hero banner slider"
+    >
+      <div className="relative w-screen h-[60vh] md:h-[80vh] overflow-hidden">
+        {slides.map((src, i) => (
+          <div
+            key={src + i}
+            className={`absolute inset-0 transition-opacity duration-700 ${
+              i === index ? "opacity-100" : "opacity-0"
+            }`}
+            aria-hidden={i !== index}
+          >
+            <Image
+              src={src}
+              alt={`Banner ${i + 1}`}
+              fill
+              className="object-cover"
+              priority={i === 0}
+            />
+          </div>
         ))}
+
+        {len > 1 && (
+          <>
+            <button
+              onClick={prev}
+              className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 hover:bg-black/60 p-2 text-white backdrop-blur"
+              aria-label="Previous slide"
+            >
+              <ChevronLeft />
+            </button>
+            <button
+              onClick={next}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 hover:bg-black/60 p-2 text-white backdrop-blur"
+              aria-label="Next slide"
+            >
+              <ChevronRight />
+            </button>
+          </>
+        )}
+
+        {len > 1 && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setIndex(i)}
+                aria-label={`Go to slide ${i + 1}`}
+                className={`h-2.5 w-2.5 rounded-full transition ${
+                  i === index
+                    ? "bg-white"
+                    : "bg-white/50 hover:bg-white/80"
+                }`}
+              />
+            ))}
+          </div>
+        )}
       </div>
+    </section>
+  );
+}
+
+/** ---------------- Collections (ERP driven) ---------------- **/
+function Collections() {
+  const { data } = useSWR("/api/item-groups", fetcher);
+  const groups = data?.groups || [];
+
+  if (!groups.length) {
+    return (
+      <p className="text-center opacity-80">
+        No collections found. Please publish Item Groups in ERPNext.
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
+      {groups.map((g: any) => (
+        <Link
+          key={g.name}
+          href={`/products?group=${encodeURIComponent(g.name)}`}
+          className="flex flex-col items-center gap-2"
+        >
+          <div className="w-28 h-28 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center overflow-hidden">
+            <Image
+              src={`/images/categories/${g.name.toLowerCase()}.png`}
+              alt={g.label}
+              width={112}
+              height={112}
+              className="object-cover w-full h-full"
+              onError={(e) =>
+                ((e.target as HTMLImageElement).src =
+                  "/images/placeholder.png")
+              }
+            />
+          </div>
+          <span className="font-medium">{g.label}</span>
+        </Link>
+      ))}
     </div>
   );
 }
 
-export default function ProductsPage() {
+/** ---------------- Page ---------------- **/
+export default function HomePage() {
+  const { data } = useSWR("/api/products", fetcher);
+  const products = data?.products || [];
+
+  const BRANDS = [
+    "Aspire",
+    "Uwell",
+    "Freemax",
+    "GeekVape",
+    "KUMIHO",
+    "Lost Vape",
+    "Oxva",
+    "PAVA",
+    "ROMIO",
+    "SMOK",
+    "Vaporesso",
+    "Voopoo",
+    "Yozo",
+    "TOKYO DISPOSABLE",
+    "H-ONE",
+    "Used Pods",
+    "Rincoe",
+    "Reymont",
+    "Chinese Pods",
+    "WOMO",
+  ];
+
   return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <ProductsInner />
-    </Suspense>
+    <div className="space-y-16">
+      {/* Hero Slider */}
+      <HeroSlider />
+
+      {/* Collections (ERP Driven) */}
+      <section id="collections" className="space-y-8">
+        <h2 className="text-center text-2xl font-bold">
+          Shop Our Collections
+        </h2>
+        <Collections />
+      </section>
+
+      {/* Brands + New Arrivals */}
+      <section className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        {/* Brands Sidebar */}
+        <aside className="lg:col-span-1 space-y-4">
+          <div className="rounded-xl border border-black/10 dark:border-white/10 p-6">
+            <h3 className="text-lg font-semibold mb-4">Brands</h3>
+            <ul className="space-y-2 text-sm">
+              {BRANDS.map((b) => (
+                <li key={b}>
+                  <Link
+                    href={`/products?brand=${encodeURIComponent(b)}`}
+                    className="hover:text-vu-red"
+                  >
+                    {b}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+
+        {/* New Arrivals Grid */}
+        <div className="lg:col-span-3 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">New Arrivals</h2>
+            <Link
+              href="/products"
+              className="text-sm text-vu-red hover:underline"
+            >
+              View All
+            </Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {products.slice(0, 6).map((p: any) => (
+              <ProductCard key={p.id} p={p} />
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
