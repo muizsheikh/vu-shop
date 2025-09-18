@@ -3,17 +3,20 @@
 import { Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useCart } from "@/store/cart"; // ✅ import cart store
 
 function SuccessInner() {
   const params = useSearchParams();
   const sessionId = params.get("session_id");
+  const clear = useCart((s) => s.clear);
 
-  // (Optional) kuch light UX polish: top par scroll, etc.
+  // ✅ Clear cart once page loads
   useEffect(() => {
+    clear();
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
-  }, []);
+  }, [clear]);
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-20 text-center">
