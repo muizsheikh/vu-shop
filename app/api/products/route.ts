@@ -22,6 +22,7 @@ const ERP_KEY = process.env.ERP_API_KEY || "";
 const ERP_SECRET = process.env.ERP_API_SECRET || "";
 const PRICE_LIST = process.env.ERP_PRICE_LIST || "Standard Selling";
 const WEBSITE_WAREHOUSE = process.env.WEBSITE_WAREHOUSE || "";
+const VU_STRICT_PUBLISH = (process.env.VU_STRICT_PUBLISH ?? "1").trim();
 
 function assertEnv() {
   if (!ERP_BASE || !ERP_KEY || !ERP_SECRET) {
@@ -42,11 +43,11 @@ function authHeaders() {
 type ERPItem = {
   item_code: string;
   item_name?: string | null;
-  image?: string | null;         // may be /files/... or /private/...
+  image?: string | null;
   item_group?: string | null;
   brand?: string | null;
   disabled?: 0 | 1;
-  vu_show_in_website?: 0 | 1;    // custom checkbox (our switch)
+  vu_show_in_website?: 0 | 1;
 };
 type ERPItemPrice = { item_code: string; price_list: string; price_list_rate: number; currency: string };
 type ERPBin = { item_code: string; warehouse: string; actual_qty: number };
@@ -66,7 +67,6 @@ async function safeJson(res: Response) {
   throw new Error(`HTTP ${res.status} ${res.statusText} (non-JSON): ${txt.slice(0, 200)}`);
 }
 
-// POST to frappe.client.get_list (prevents long URLs)
 async function erpGetList<T>(doctype: string, body: Record<string, any>, timeoutMs = 25000) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
@@ -98,18 +98,9 @@ function isPrivatePath(p?: string | null) {
   return /^\/?private\//i.test(p);
 }
 
-/**
- * Load a PUBLIC image per item from File doctype (fallback).
- * Picks latest public file attached to Item.<item_code>.
- */
 async function loadPublicFilesForItems(itemCodes: string[]) {
-  const map = new Map<string, string>(); // item_code -> absolute url
-  const parts = chunk(itemCodes, 100);
-
-  // We need to query per chunk; ERP doesn't support IN for attached_to_name reliably in all versions,
-  // so we'll just loop chunks and fetch many with IN if supported; otherwise you can loop per item if needed.
-  for (const part of parts) {
-    // Try IN first; if your ERP doesn't support, fall back per-item (optional).
+  const map = new Map<string, string>();
+  for (const part of chunk(itemCodes, 100)) {
     const files = await erpGetList<ERPFile>("File", {
       fields: ["file_url", "is_private", "attached_to_name"],
       filters: [
@@ -120,7 +111,6 @@ async function loadPublicFilesForItems(itemCodes: string[]) {
       order_by: "modified desc",
       limit_page_length: 1000,
     });
-
     for (const f of files) {
       const code = (f.attached_to_name || "").trim();
       if (!code || f.is_private) continue;
@@ -133,36 +123,50 @@ async function loadPublicFilesForItems(itemCodes: string[]) {
 }
 
 /* ---------- GET ---------- */
-export async function GET() {
+export async function GET(req: Request) {
   try {
     assertEnv();
 
-    // (1) Items explicitly allowed for website
+    const url = new URL(req.url);
+    const brand = (url.searchParams.get("brand") || "").trim();
+    const group = (url.searchParams.get("group") || "").trim();
+    const q = (url.searchParams.get("q") || "").trim();
+    const minPrice = url.searchParams.get("min_price");
+    const maxPrice = url.searchParams.get("max_price");
+    const page = Math.max(parseInt(url.searchParams.get("page") || "1", 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "12", 10) || 12, 1), 60);
+
+    // Item filters
+    const filters: any[] = [["disabled", "=", 0]];
+    if (VU_STRICT_PUBLISH !== "0") filters.push(["vu_show_in_website", "=", 1]);
+    if (brand) filters.push(["brand", "like", brand]); // case-insensitive
+    if (group) filters.push(["item_group", "like", group]); // case-insensitive
+
+    const or_filters = q
+      ? [
+          ["item_name", "like", `%${q}%`],
+          ["item_code", "like", `%${q}%`],
+        ]
+      : undefined;
+
     const items = await erpGetList<ERPItem>("Item", {
       fields: ["item_code", "item_name", "image", "item_group", "brand", "disabled", "vu_show_in_website"],
-      filters: [
-        ["disabled", "=", 0],
-        ["vu_show_in_website", "=", 1],
-      ],
+      filters,
+      ...(or_filters ? { or_filters } : {}),
       order_by: "item_name asc",
-      limit_page_length: 1000,
+      limit_page_length: 2000,
     });
 
     if (!items.length) {
       return NextResponse.json({
         products: [],
-        meta: {
-          source: "Item.vu_show_in_website=1",
-          price_list: PRICE_LIST,
-          warehouse: WEBSITE_WAREHOUSE,
-          count: 0,
-        },
+        meta: { page, limit, total: 0, pages: 0, filters: { brand, group, q } },
       });
     }
 
     const codes = items.map((it) => it.item_code).filter(Boolean);
 
-    // (2) Prices
+    // Prices
     const priceChunks = await Promise.all(
       chunk(codes).map((part) =>
         erpGetList<ERPItemPrice>("Item Price", {
@@ -171,14 +175,14 @@ export async function GET() {
             ["item_code", "in", part],
             ["price_list", "=", PRICE_LIST],
           ],
-          limit_page_length: 1000,
+          limit_page_length: 2000,
         })
       )
     );
     const prices = priceChunks.flat();
     const priceMap = new Map(prices.map((p) => [p.item_code, p]));
 
-    // (3) Stock strictly from selected warehouse
+    // Stock
     const binChunks = await Promise.all(
       chunk(codes).map((part) =>
         erpGetList<ERPBin>("Bin", {
@@ -187,18 +191,16 @@ export async function GET() {
             ["item_code", "in", part],
             ["warehouse", "=", WEBSITE_WAREHOUSE],
           ],
-          limit_page_length: 1000,
+          limit_page_length: 2000,
         })
       )
     );
     const bins = binChunks.flat();
     const stockMap = new Map(bins.map((b) => [b.item_code, Number(b.actual_qty || 0)]));
 
-    // (4) PUBLIC file fallback map for images
     const publicFileMap = await loadPublicFilesForItems(codes);
 
-    // (5) Build products (hide qty <= 0)
-    const products = items
+    let products = items
       .map((it) => {
         const stockQty = stockMap.get(it.item_code) ?? 0;
         if (stockQty <= 0) return null;
@@ -207,14 +209,14 @@ export async function GET() {
         const useItemImg = rawImg && !isPrivatePath(rawImg) ? resolveAbsolute(rawImg) : null;
         const fileImg = publicFileMap.get(it.item_code) || null;
 
-        const chosenImg = useItemImg || fileImg || null;
-
         const price = priceMap.get(it.item_code);
+        const priceNum = price ? Number(price.price_list_rate) : null;
+
         return {
           id: it.item_code,
           name: it.item_name ?? it.item_code,
-          image: chosenImg, // may be null → frontend should fallback to /images/placeholder.png
-          price: price ? Number(price.price_list_rate) : null,
+          image: useItemImg || fileImg || null,
+          price: priceNum,
           currency: price?.currency || "PKR",
           item_group: it.item_group ?? null,
           brand: it.brand ?? null,
@@ -223,16 +225,41 @@ export async function GET() {
           disabled: !!(it.disabled ?? 0),
         };
       })
-      .filter(Boolean);
+      .filter(Boolean) as any[];
+
+    // Min/max price filter
+    const minP = minPrice ? Number(minPrice) : null;
+    const maxP = maxPrice ? Number(maxPrice) : null;
+    if (minP != null || maxP != null) {
+      products = products.filter((p) => {
+        if (p.price == null) return false;
+        if (minP != null && p.price < minP) return false;
+        if (maxP != null && p.price > maxP) return false;
+        return true;
+      });
+    }
+
+    // Defensive client-side q filter
+    if (q) {
+      const qq = q.toLowerCase();
+      products = products.filter(
+        (p) =>
+          p.name.toLowerCase().includes(qq) ||
+          p.id.toLowerCase().includes(qq) ||
+          (p.brand ?? "").toLowerCase().includes(qq)
+      );
+    }
+
+    products.sort((a, b) => a.name.localeCompare(b.name));
+
+    const total = products.length;
+    const pages = Math.max(Math.ceil(total / limit), 0);
+    const start = (page - 1) * limit;
+    const paged = products.slice(start, start + limit);
 
     return NextResponse.json({
-      products,
-      meta: {
-        source: "Item.vu_show_in_website=1 + Bin(warehouse) + File(public fallback)",
-        price_list: PRICE_LIST,
-        warehouse: WEBSITE_WAREHOUSE,
-        count: products.length,
-      },
+      products: paged,
+      meta: { page, limit, total, pages, filters: { brand, group, q, min_price: minPrice, max_price: maxPrice } },
     });
   } catch (e: any) {
     console.error("Products API error:", e);
