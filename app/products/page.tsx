@@ -122,47 +122,6 @@ function HeroSlider() {
   );
 }
 
-/** ---------------- Collections (ERP driven) ---------------- **/
-function Collections() {
-  const { data } = useSWR("/api/item-groups", fetcher);
-  const groups = data?.groups || [];
-
-  if (!groups.length) {
-    return (
-      <p className="text-center opacity-80">
-        No collections found. Please publish Item Groups in ERPNext.
-      </p>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
-      {groups.map((g: any) => (
-        <Link
-          key={g.name}
-          href={`/products?group=${encodeURIComponent(g.name)}`}
-          className="flex flex-col items-center gap-2"
-        >
-          <div className="w-28 h-28 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center overflow-hidden">
-            <Image
-              src={`/images/categories/${g.name.toLowerCase()}.png`}
-              alt={g.label}
-              width={112}
-              height={112}
-              className="object-cover w-full h-full"
-              onError={(e) =>
-                ((e.target as HTMLImageElement).src =
-                  "/images/placeholder.png")
-              }
-            />
-          </div>
-          <span className="font-medium">{g.label}</span>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 /** ---------------- Page ---------------- **/
 export default function HomePage() {
   const { data } = useSWR("/api/products", fetcher);
@@ -196,12 +155,34 @@ export default function HomePage() {
       {/* Hero Slider */}
       <HeroSlider />
 
-      {/* Collections (ERP Driven) */}
+      {/* Collections (Reverted to 4 fixed groups) */}
       <section id="collections" className="space-y-8">
-        <h2 className="text-center text-2xl font-bold">
-          Shop Our Collections
-        </h2>
-        <Collections />
+        <h2 className="text-center text-2xl font-bold">Shop Our Collections</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
+          {[
+            { name: "Devices", img: "/images/categories/devices.png" },
+            { name: "Coils", img: "/images/categories/coils.png" },
+            { name: "E-Liquids", img: "/images/categories/eliquids.png" },
+            { name: "Disposables", img: "/images/categories/disposables.png" },
+          ].map((c) => (
+            <Link
+              key={c.name}
+              href={`/products?group=${encodeURIComponent(c.name)}`}
+              className="flex flex-col items-center gap-2"
+            >
+              <div className="w-28 h-28 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center overflow-hidden">
+                <Image
+                  src={c.img}
+                  alt={c.name}
+                  width={112}
+                  height={112}
+                  className="object-cover w-full h-full"
+                />
+              </div>
+              <span className="font-medium">{c.name}</span>
+            </Link>
+          ))}
+        </div>
       </section>
 
       {/* Brands + New Arrivals */}
