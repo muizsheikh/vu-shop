@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import ProductCard from "@/components/ProductCard";
@@ -9,8 +10,6 @@ type Product = {
   name: string;
   image: string | null;
   price: number | null;
-  description?: string | null;
-  route?: string | null;
   stock_qty?: number | null;
   in_stock?: boolean;
   item_group?: string | null;
@@ -19,9 +18,8 @@ type Product = {
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-export default function ProductsPage() {
+function ProductsInner() {
   const params = useSearchParams();
-
   const brand = params.get("brand") || "";
   const group = params.get("group") || "";
   const q = params.get("q") || "";
@@ -78,12 +76,19 @@ export default function ProductsPage() {
   return (
     <div>
       <h1 className="mb-4 text-2xl font-bold">Products</h1>
-
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {sorted.map((p) => (
           <ProductCard key={p.id} p={p} />
         ))}
       </div>
     </div>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ProductsInner />
+    </Suspense>
   );
 }
