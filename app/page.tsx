@@ -188,23 +188,30 @@ export default function HomePage() {
       {/* Brands + New Arrivals */}
       <section className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         {/* Brands Sidebar */}
-        <aside className="lg:col-span-1 space-y-4">
-          <div className="rounded-xl border border-black/10 dark:border-white/10 p-6">
-            <h3 className="text-lg font-semibold mb-4">Brands</h3>
-            <ul className="space-y-2 text-sm">
-              {BRANDS.map((b) => (
-                <li key={b}>
-                  <Link
-                    href={`/products?brand=${encodeURIComponent(b)}`}
-                    className="hover:text-vu-red"
-                  >
-                    {b}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </aside>
+<aside className="lg:col-span-1 space-y-4">
+  <div className="rounded-xl border border-black/10 dark:border-white/10 p-6">
+    <h3 className="text-lg font-semibold mb-4">Brands</h3>
+    <div className="flex flex-col gap-2">
+      {BRANDS.map((b) => {
+        const isActive = activeBrand.toLowerCase() === b.toLowerCase();
+        return (
+          <Link
+            key={b}
+            href={`/products?brand=${encodeURIComponent(b)}`}
+            className={`block w-full px-3 py-2 rounded-lg text-sm text-center transition ${
+              isActive
+                ? "bg-vu-red text-white font-semibold"
+                : "bg-zinc-900 hover:bg-zinc-800 text-gray-300"
+            }`}
+          >
+            {b}
+          </Link>
+        );
+      })}
+    </div>
+  </div>
+</aside>
+
 
         {/* New Arrivals Grid */}
         <div className="lg:col-span-3 space-y-4">
