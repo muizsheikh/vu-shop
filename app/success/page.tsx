@@ -1,18 +1,17 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useCart } from "@/store/cart"; // ✅ import cart store
+import { useCartStore } from "@/store/cart"; // ✅ sahi import
 
 function SuccessInner() {
   const params = useSearchParams();
   const sessionId = params.get("session_id");
-  const clear = useCart((s) => s.clear);
+  const clear = useCartStore((s) => s.clear);
 
-  // ✅ Clear cart once page loads
   useEffect(() => {
-    clear();
+    clear(); // ✅ cart clear after success
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -21,19 +20,15 @@ function SuccessInner() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-20 text-center">
       <h1 className="text-3xl font-bold text-vu-red">Payment Successful 🎉</h1>
-
       <p className="mt-4 text-lg opacity-80">
         Shukriya! Aapka order receive ho gaya hai.
-        <br />
-        Hum aapko email par confirmation bhej chukay hain.
+        <br /> Hum aapko email par confirmation bhej chukay hain.
       </p>
-
       {sessionId && (
         <p className="mt-3 text-sm opacity-60">
           Session ID: <span className="font-mono">{sessionId}</span>
         </p>
       )}
-
       <div className="mt-8 flex items-center justify-center gap-3">
         <Link
           href="/products"
@@ -48,7 +43,6 @@ function SuccessInner() {
           Back to Home
         </Link>
       </div>
-
       <div className="mt-6 text-xs opacity-60">
         Agar koi masla ho, to{" "}
         <Link href="/contact" className="underline">
