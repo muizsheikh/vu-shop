@@ -7,12 +7,10 @@ import useSWR from "swr";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-// Simple fetcher for ERP API
-const fetcher = (url: string) => fetch(url).then(res => res.json());
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 /** ---------------- Hero Slider ---------------- **/
 function HeroSlider() {
-  // Add/remove banner images here
   const slides = [
     "/images/banners/banner1.jpg",
     "/images/banners/banner2.jpg",
@@ -26,13 +24,12 @@ function HeroSlider() {
   const timerRef = useRef<number | null>(null);
   const len = slides.length;
 
-  // Auto-advance
   useEffect(() => {
     if (len <= 1) return;
     if (timerRef.current) window.clearInterval(timerRef.current);
     if (!paused) {
       timerRef.current = window.setInterval(() => {
-        setIndex(i => (i + 1) % len);
+        setIndex((i) => (i + 1) % len);
       }, 4500);
     }
     return () => {
@@ -40,11 +37,9 @@ function HeroSlider() {
     };
   }, [len, paused]);
 
-  // Manual controls
-  const prev = () => setIndex(i => (i - 1 + len) % len);
-  const next = () => setIndex(i => (i + 1) % len);
+  const prev = () => setIndex((i) => (i - 1 + len) % len);
+  const next = () => setIndex((i) => (i + 1) % len);
 
-  // Touch swipe (basic)
   const startX = useRef<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
     startX.current = e.touches[0].clientX;
@@ -69,11 +64,12 @@ function HeroSlider() {
       aria-label="Hero banner slider"
     >
       <div className="relative w-screen h-[60vh] md:h-[80vh] overflow-hidden">
-        {/* Slides */}
         {slides.map((src, i) => (
           <div
             key={src + i}
-            className={`absolute inset-0 transition-opacity duration-700 ${i === index ? "opacity-100" : "opacity-0"}`}
+            className={`absolute inset-0 transition-opacity duration-700 ${
+              i === index ? "opacity-100" : "opacity-0"
+            }`}
             aria-hidden={i !== index}
           >
             <Image
@@ -86,7 +82,6 @@ function HeroSlider() {
           </div>
         ))}
 
-        {/* Prev/Next */}
         {len > 1 && (
           <>
             <button
@@ -106,7 +101,6 @@ function HeroSlider() {
           </>
         )}
 
-        {/* Dots */}
         {len > 1 && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
             {slides.map((_, i) => (
@@ -115,7 +109,9 @@ function HeroSlider() {
                 onClick={() => setIndex(i)}
                 aria-label={`Go to slide ${i + 1}`}
                 className={`h-2.5 w-2.5 rounded-full transition ${
-                  i === index ? "bg-white" : "bg-white/50 hover:bg-white/80"
+                  i === index
+                    ? "bg-white"
+                    : "bg-white/50 hover:bg-white/80"
                 }`}
               />
             ))}
@@ -131,6 +127,29 @@ export default function HomePage() {
   const { data } = useSWR("/api/products", fetcher);
   const products = data?.products || [];
 
+  const BRANDS = [
+    "Aspire",
+    "Uwell",
+    "Freemax",
+    "GeekVape",
+    "KUMIHO",
+    "Lost Vape",
+    "Oxva",
+    "PAVA",
+    "ROMIO",
+    "SMOK",
+    "Vaporesso",
+    "Voopoo",
+    "Yozo",
+    "TOKYO DISPOSABLE",
+    "H-ONE",
+    "Used Pods",
+    "Rincoe",
+    "Reymont",
+    "Chinese Pods",
+    "WOMO",
+  ];
+
   return (
     <div className="space-y-16">
       {/* Hero Slider */}
@@ -145,7 +164,7 @@ export default function HomePage() {
             { name: "Coils", img: "/images/categories/coils.png" },
             { name: "E-Liquids", img: "/images/categories/eliquids.png" },
             { name: "Disposables", img: "/images/categories/disposables.png" },
-          ].map(c => (
+          ].map((c) => (
             <Link
               key={c.name}
               href={`/products?group=${encodeURIComponent(c.name)}`}
@@ -173,7 +192,7 @@ export default function HomePage() {
           <div className="rounded-xl border border-black/10 dark:border-white/10 p-6">
             <h3 className="text-lg font-semibold mb-4">Brands</h3>
             <ul className="space-y-2 text-sm">
-              {["Oxva", "Aspire", "Uwell Caliburn", "Voopoo", "Freemax"].map(b => (
+              {BRANDS.map((b) => (
                 <li key={b}>
                   <Link
                     href={`/products?brand=${encodeURIComponent(b)}`}
