@@ -1,8 +1,8 @@
-// /app/products/page.tsx
-import { headers } from "next/headers";
-import ProductCard from "@/components/ProductCard";
+"use client";
 
-export const dynamic = "force-dynamic";
+import { useSearchParams } from "next/navigation";
+import useSWR from "swr";
+import ProductCard from "@/components/ProductCard";
 
 type Product = {
   id: string;
@@ -13,32 +13,57 @@ type Product = {
   route?: string | null;
   stock_qty?: number | null;
   in_stock?: boolean;
+  item_group?: string | null;
+  brand?: string | null;
 };
 
-async function loadProducts(): Promise<Product[]> {
-  const hdrs = await headers(); // ✅ Next 15: await required
-  const proto = hdrs.get("x-forwarded-proto") ?? "http";
-  const host = hdrs.get("host") ?? "localhost:3000";
-  const base = `${proto}://${host}`;
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-  const res = await fetch(`${base}/api/products`, { cache: "no-store" });
-  if (!res.ok) return [];
-  const j = await res.json();
-  return (j?.products as Product[]) ?? [];
-}
+export default function ProductsPage() {
+  const params = useSearchParams();
 
-export default async function ProductsPage() {
-  const products = await loadProducts();
+  const brand = params.get("brand") || "";
+  const group = params.get("group") || "";
+  const q = params.get("q") || "";
+  const page = params.get("page") || "1";
+
+  const apiUrl = `/api/products?brand=${encodeURIComponent(
+    brand
+  )}&group=${encodeURIComponent(group)}&q=${encodeURIComponent(
+    q
+  )}&page=${page}`;
+
+  const { data, error, isLoading } = useSWR(apiUrl, fetcher);
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-2xl text-center">
+        <h1 className="text-2xl font-bold">Products</h1>
+        <p className="mt-2 opacity-80">Error loading products.</p>
+      </div>
+    );
+  }
+
+  if (isLoading || !data) {
+    return (
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-48 animate-pulse rounded-xl bg-gray-800/40"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  const products: Product[] = data.products || [];
 
   if (!products.length) {
     return (
       <div className="mx-auto max-w-2xl text-center">
         <h1 className="text-2xl font-bold">Products</h1>
-        <p className="mt-2 opacity-80">
-          Abhi koi product publish nahi hai. ERPNext me{" "}
-          <span className="font-semibold">Website Item → Published = 1</span> karein,
-          (Price List & image set) — phir yahan auto show ho jayenge.
-        </p>
+        <p className="mt-2 opacity-80">No products found for this filter.</p>
       </div>
     );
   }
