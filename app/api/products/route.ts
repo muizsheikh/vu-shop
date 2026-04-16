@@ -47,12 +47,30 @@ type ERPItem = {
   image?: string | null;
   item_group?: string | null;
   brand?: string | null;
+  description?: string | null;
+  route?: string | null;
   disabled?: 0 | 1;
   vu_show_in_website?: 0 | 1;
 };
-type ERPItemPrice = { item_code: string; price_list: string; price_list_rate: number; currency: string };
-type ERPBin = { item_code: string; warehouse: string; actual_qty: number };
-type ERPFile = { file_url: string; is_private: 0 | 1; attached_to_name?: string | null };
+
+type ERPItemPrice = {
+  item_code: string;
+  price_list: string;
+  price_list_rate: number;
+  currency: string;
+};
+
+type ERPBin = {
+  item_code: string;
+  warehouse: string;
+  actual_qty: number;
+};
+
+type ERPFile = {
+  file_url: string;
+  is_private: 0 | 1;
+  attached_to_name?: string | null;
+};
 
 /* ---------- Helpers ---------- */
 function chunk<T>(arr: T[], size = 100) {
@@ -71,6 +89,7 @@ async function safeJson(res: Response) {
 async function erpGetList<T>(doctype: string, body: Record<string, any>, timeoutMs = 25000) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const url = `${ERP_BASE}/api/method/frappe.client.get_list`;
     const res = await fetch(url, {
@@ -80,9 +99,11 @@ async function erpGetList<T>(doctype: string, body: Record<string, any>, timeout
       signal: controller.signal,
       body: JSON.stringify({ doctype, ...body }),
     });
+
     const json = await safeJson(res).catch((e) => {
       throw new Error(String(e.message || e));
     });
+
     return (json?.message ?? json?.data ?? []) as T[];
   } finally {
     clearTimeout(t);
@@ -94,13 +115,30 @@ function resolveAbsolute(raw?: string | null) {
   if (/^https?:\/\//i.test(raw)) return raw;
   return `${ERP_BASE}${raw.startsWith("/") ? "" : "/"}${raw}`;
 }
+
 function isPrivatePath(p?: string | null) {
   if (!p) return false;
   return /^\/?private\//i.test(p);
 }
 
+function toSlug(s: string) {
+  return s
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)+/g, "");
+}
+
+function cleanRoute(route?: string | null) {
+  const r = (route || "").trim();
+  if (!r) return null;
+  return r.startsWith("/") ? r : `/${r}`;
+}
+
 async function loadPublicFilesForItems(itemCodes: string[]) {
   const map = new Map<string, string>();
+
   for (const part of chunk(itemCodes, 100)) {
     const files = await erpGetList<ERPFile>("File", {
       fields: ["file_url", "is_private", "attached_to_name"],
@@ -112,6 +150,7 @@ async function loadPublicFilesForItems(itemCodes: string[]) {
       order_by: "modified desc",
       limit_page_length: 1000,
     });
+
     for (const f of files) {
       const code = (f.attached_to_name || "").trim();
       if (!code || f.is_private) continue;
@@ -120,6 +159,7 @@ async function loadPublicFilesForItems(itemCodes: string[]) {
       }
     }
   }
+
   return map;
 }
 
@@ -137,21 +177,31 @@ export async function GET(req: Request) {
     const page = Math.max(parseInt(url.searchParams.get("page") || "1", 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "12", 10) || 12, 1), 60);
 
-    // Item filters
     const filters: any[] = [["disabled", "=", 0]];
     if (VU_STRICT_PUBLISH !== "0") filters.push(["vu_show_in_website", "=", 1]);
-    if (brand) filters.push(["brand", "like", brand]); // case-insensitive
-    if (group) filters.push(["item_group", "like", group]); // case-insensitive
+    if (brand) filters.push(["brand", "like", brand]);
+    if (group) filters.push(["item_group", "like", group]);
 
     const or_filters = q
       ? [
           ["item_name", "like", `%${q}%`],
           ["item_code", "like", `%${q}%`],
+          ["brand", "like", `%${q}%`],
         ]
       : undefined;
 
     const items = await erpGetList<ERPItem>("Item", {
-      fields: ["item_code", "item_name", "image", "item_group", "brand", "disabled", "vu_show_in_website"],
+      fields: [
+        "item_code",
+        "item_name",
+        "image",
+        "item_group",
+        "brand",
+        "description",
+        "route",
+        "disabled",
+        "vu_show_in_website",
+      ],
       filters,
       ...(or_filters ? { or_filters } : {}),
       order_by: "item_name asc",
@@ -167,7 +217,6 @@ export async function GET(req: Request) {
 
     const codes = items.map((it) => it.item_code).filter(Boolean);
 
-    // Prices
     const priceChunks = await Promise.all(
       chunk(codes).map((part) =>
         erpGetList<ERPItemPrice>("Item Price", {
@@ -183,7 +232,6 @@ export async function GET(req: Request) {
     const prices = priceChunks.flat();
     const priceMap = new Map(prices.map((p) => [p.item_code, p]));
 
-    // Stock
     const binChunks = await Promise.all(
       chunk(codes).map((part) =>
         erpGetList<ERPBin>("Bin", {
@@ -213,14 +261,20 @@ export async function GET(req: Request) {
         const price = priceMap.get(it.item_code);
         const priceNum = price ? Number(price.price_list_rate) : null;
 
+        const slug = toSlug(it.item_name || it.item_code);
+        const websiteRoute = cleanRoute(it.route) || `/products/${slug}`;
+
         return {
           id: it.item_code,
+          slug,
+          route: websiteRoute,
           name: it.item_name ?? it.item_code,
           image: useItemImg || fileImg || null,
           price: priceNum,
           currency: price?.currency || "PKR",
           item_group: it.item_group ?? null,
           brand: it.brand ?? null,
+          description: it.description ?? null,
           stock_qty: stockQty,
           in_stock: stockQty > 0,
           disabled: !!(it.disabled ?? 0),
@@ -228,9 +282,9 @@ export async function GET(req: Request) {
       })
       .filter(Boolean) as any[];
 
-    // Min/max price filter
     const minP = minPrice ? Number(minPrice) : null;
     const maxP = maxPrice ? Number(maxPrice) : null;
+
     if (minP != null || maxP != null) {
       products = products.filter((p) => {
         if (p.price == null) return false;
@@ -240,14 +294,15 @@ export async function GET(req: Request) {
       });
     }
 
-    // Defensive client-side q filter
     if (q) {
       const qq = q.toLowerCase();
       products = products.filter(
         (p) =>
           p.name.toLowerCase().includes(qq) ||
           p.id.toLowerCase().includes(qq) ||
-          (p.brand ?? "").toLowerCase().includes(qq)
+          p.slug.toLowerCase().includes(qq) ||
+          (p.brand ?? "").toLowerCase().includes(qq) ||
+          (p.item_group ?? "").toLowerCase().includes(qq)
       );
     }
 
@@ -260,7 +315,19 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       products: paged,
-      meta: { page, limit, total, pages, filters: { brand, group, q, min_price: minPrice, max_price: maxPrice } },
+      meta: {
+        page,
+        limit,
+        total,
+        pages,
+        filters: {
+          brand,
+          group,
+          q,
+          min_price: minPrice,
+          max_price: maxPrice,
+        },
+      },
     });
   } catch (e: any) {
     console.error("Products API error:", e);
