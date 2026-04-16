@@ -17,6 +17,7 @@ function normBase(u: string) {
   if (x && !/^https?:\/\//i.test(x)) x = `https://${x}`;
   return x.replace(/\/+$/, "");
 }
+
 const ERP_BASE = normBase(process.env.ERP_BASE_URL || "");
 const ERP_KEY = process.env.ERP_API_KEY || "";
 const ERP_SECRET = process.env.ERP_API_SECRET || "";
@@ -32,6 +33,7 @@ function assertEnv() {
     throw new Error("WEBSITE_WAREHOUSE env not set");
   }
 }
+
 function authHeaders() {
   return {
     "Content-Type": "application/json",
@@ -41,13 +43,13 @@ function authHeaders() {
 
 /* ---------- Types ---------- */
 type ERPItem = {
+  name?: string;
   item_code: string;
   item_name?: string | null;
   image?: string | null;
   item_group?: string | null;
   brand?: string | null;
   description?: string | null;
-  route?: string | null;
   disabled?: 0 | 1;
   vu_show_in_website?: 0 | 1;
 };
@@ -85,30 +87,6 @@ async function safeJson(res: Response) {
   throw new Error(`HTTP ${res.status} ${res.statusText} (non-JSON): ${txt.slice(0, 300)}`);
 }
 
-async function erpGetList<T>(doctype: string, body: Record<string, any>, timeoutMs = 25000) {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const url = `${ERP_BASE}/api/method/frappe.client.get_list`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: authHeaders(),
-      cache: "no-store",
-      signal: controller.signal,
-      body: JSON.stringify({ doctype, ...body }),
-    });
-
-    const json = await safeJson(res).catch((e) => {
-      throw new Error(String(e.message || e));
-    });
-
-    return (json?.message ?? json?.data ?? []) as T[];
-  } finally {
-    clearTimeout(t);
-  }
-}
-
 function resolveAbsolute(raw?: string | null) {
   if (!raw) return null;
   if (/^https?:\/\//i.test(raw)) return raw;
@@ -129,17 +107,55 @@ function toSlug(s: string) {
     .replace(/(^-|-$)+/g, "");
 }
 
-function cleanRoute(route?: string | null) {
-  const r = (route || "").trim();
-  if (!r) return null;
-  return r.startsWith("/") ? r : `/${r}`;
+function buildApiUrl(path: string, params?: Record<string, string>) {
+  const url = new URL(`${ERP_BASE}${path}`);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      url.searchParams.set(k, v);
+    }
+  }
+  return url.toString();
+}
+
+async function erpResourceList<T>(
+  doctype: string,
+  opts: {
+    fields?: string[];
+    filters?: any[];
+    or_filters?: any[];
+    order_by?: string;
+    limit_page_length?: number;
+    limit_start?: number;
+  } = {}
+): Promise<T[]> {
+  const params: Record<string, string> = {};
+
+  if (opts.fields?.length) params.fields = JSON.stringify(opts.fields);
+  if (opts.filters?.length) params.filters = JSON.stringify(opts.filters);
+  if (opts.or_filters?.length) params.or_filters = JSON.stringify(opts.or_filters);
+  if (opts.order_by) params.order_by = opts.order_by;
+  if (typeof opts.limit_page_length === "number") {
+    params.limit_page_length = String(opts.limit_page_length);
+  }
+  if (typeof opts.limit_start === "number") {
+    params.limit_start = String(opts.limit_start);
+  }
+
+  const url = buildApiUrl(`/api/resource/${encodeURIComponent(doctype)}`, params);
+  const res = await fetch(url, {
+    headers: authHeaders(),
+    cache: "no-store",
+  });
+
+  const json = await safeJson(res);
+  return (json?.data ?? []) as T[];
 }
 
 async function loadPublicFilesForItems(itemCodes: string[]) {
   const map = new Map<string, string>();
 
   for (const part of chunk(itemCodes, 100)) {
-    const files = await erpGetList<ERPFile>("File", {
+    const files = await erpResourceList<ERPFile>("File", {
       fields: ["file_url", "is_private", "attached_to_name"],
       filters: [
         ["attached_to_doctype", "=", "Item"],
@@ -178,9 +194,11 @@ export async function GET(req: Request) {
     const debug = url.searchParams.get("debug") === "1";
 
     const filters: any[] = [["disabled", "=", 0]];
-    if (VU_STRICT_PUBLISH !== "0") filters.push(["vu_show_in_website", "=", 1]);
-    if (brand) filters.push(["brand", "like", brand]);
-    if (group) filters.push(["item_group", "like", group]);
+    if (VU_STRICT_PUBLISH !== "0") {
+      filters.push(["vu_show_in_website", "=", 1]);
+    }
+    if (brand) filters.push(["brand", "like", `%${brand}%`]);
+    if (group) filters.push(["item_group", "like", `%${group}%`]);
 
     const or_filters = q
       ? [
@@ -190,7 +208,7 @@ export async function GET(req: Request) {
         ]
       : undefined;
 
-    const items = await erpGetList<ERPItem>("Item", {
+    const items = await erpResourceList<ERPItem>("Item", {
       fields: [
         "item_code",
         "item_name",
@@ -198,7 +216,6 @@ export async function GET(req: Request) {
         "item_group",
         "brand",
         "description",
-        "route",
         "disabled",
         "vu_show_in_website",
       ],
@@ -243,7 +260,7 @@ export async function GET(req: Request) {
 
     const priceChunks = await Promise.all(
       chunk(codes).map((part) =>
-        erpGetList<ERPItemPrice>("Item Price", {
+        erpResourceList<ERPItemPrice>("Item Price", {
           fields: ["item_code", "price_list", "price_list_rate", "currency"],
           filters: [
             ["item_code", "in", part],
@@ -258,7 +275,7 @@ export async function GET(req: Request) {
 
     const binChunks = await Promise.all(
       chunk(codes).map((part) =>
-        erpGetList<ERPBin>("Bin", {
+        erpResourceList<ERPBin>("Bin", {
           fields: ["item_code", "warehouse", "actual_qty"],
           filters: [
             ["item_code", "in", part],
@@ -273,34 +290,34 @@ export async function GET(req: Request) {
 
     const publicFileMap = await loadPublicFilesForItems(codes);
 
-    let products = items
-      .map((it) => {
-        const stockQty = stockMap.get(it.item_code) ?? 0;
-        const rawImg = it.image || null;
-        const useItemImg = rawImg && !isPrivatePath(rawImg) ? resolveAbsolute(rawImg) : null;
-        const fileImg = publicFileMap.get(it.item_code) || null;
-        const price = priceMap.get(it.item_code);
-        const priceNum = price ? Number(price.price_list_rate) : null;
-        const slug = toSlug(it.item_name || it.item_code);
-        const websiteRoute = cleanRoute(it.route) || `/products/${slug}`;
+    let products = items.map((it) => {
+      const stockQty = stockMap.get(it.item_code) ?? 0;
+      const rawImg = it.image || null;
+      const useItemImg = rawImg && !isPrivatePath(rawImg) ? resolveAbsolute(rawImg) : null;
+      const fileImg = publicFileMap.get(it.item_code) || null;
 
-        return {
-          id: it.item_code,
-          slug,
-          route: websiteRoute,
-          name: it.item_name ?? it.item_code,
-          image: useItemImg || fileImg || null,
-          price: priceNum,
-          currency: price?.currency || "PKR",
-          item_group: it.item_group ?? null,
-          brand: it.brand ?? null,
-          description: it.description ?? null,
-          stock_qty: stockQty,
-          in_stock: stockQty > 0,
-          disabled: !!(it.disabled ?? 0),
-        };
-      })
-      .filter(Boolean) as any[];
+      const price = priceMap.get(it.item_code);
+      const priceNum = price ? Number(price.price_list_rate) : null;
+
+      const slug = toSlug(it.item_name || it.item_code);
+      const websiteRoute = `/products/${slug}`;
+
+      return {
+        id: it.item_code,
+        slug,
+        route: websiteRoute,
+        name: it.item_name ?? it.item_code,
+        image: useItemImg || fileImg || null,
+        price: priceNum,
+        currency: price?.currency || "PKR",
+        item_group: it.item_group ?? null,
+        brand: it.brand ?? null,
+        description: it.description ?? null,
+        stock_qty: stockQty,
+        in_stock: stockQty > 0,
+        disabled: !!(it.disabled ?? 0),
+      };
+    });
 
     const beforeFilterCount = products.length;
 
@@ -386,6 +403,9 @@ export async function GET(req: Request) {
     });
   } catch (e: any) {
     console.error("Products API error:", e);
-    return NextResponse.json({ error: e.message || "Failed to load products" }, { status: 500 });
+    return NextResponse.json(
+      { error: e.message || "Failed to load products" },
+      { status: 500 }
+    );
   }
 }
