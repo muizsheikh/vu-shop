@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const revalidate = 60;
 
-// Prefer IPv4 for DNS (avoids AAAA stalls)
 try {
   // @ts-ignore
   const { setDefaultResultOrder } = await import("node:dns");
@@ -83,7 +82,7 @@ async function safeJson(res: Response) {
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) return res.json();
   const txt = await res.text();
-  throw new Error(`HTTP ${res.status} ${res.statusText} (non-JSON): ${txt.slice(0, 200)}`);
+  throw new Error(`HTTP ${res.status} ${res.statusText} (non-JSON): ${txt.slice(0, 300)}`);
 }
 
 async function erpGetList<T>(doctype: string, body: Record<string, any>, timeoutMs = 25000) {
@@ -175,7 +174,8 @@ export async function GET(req: Request) {
     const minPrice = url.searchParams.get("min_price");
     const maxPrice = url.searchParams.get("max_price");
     const page = Math.max(parseInt(url.searchParams.get("page") || "1", 10) || 1, 1);
-    const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "12", 10) || 12, 1), 60);
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "12", 10) || 12, 1), 200);
+    const debug = url.searchParams.get("debug") === "1";
 
     const filters: any[] = [["disabled", "=", 0]];
     if (VU_STRICT_PUBLISH !== "0") filters.push(["vu_show_in_website", "=", 1]);
@@ -211,7 +211,31 @@ export async function GET(req: Request) {
     if (!items.length) {
       return NextResponse.json({
         products: [],
-        meta: { page, limit, total: 0, pages: 0, filters: { brand, group, q } },
+        meta: {
+          page,
+          limit,
+          total: 0,
+          pages: 0,
+          filters: { brand, group, q, min_price: minPrice, max_price: maxPrice },
+        },
+        debug: debug
+          ? {
+              env: {
+                base: ERP_BASE,
+                price_list: PRICE_LIST,
+                warehouse: WEBSITE_WAREHOUSE,
+                strict_publish: VU_STRICT_PUBLISH,
+              },
+              counts: {
+                items: 0,
+                prices: 0,
+                bins: 0,
+                public_files: 0,
+                products_before_filters: 0,
+                products_after_filters: 0,
+              },
+            }
+          : undefined,
       });
     }
 
@@ -252,14 +276,11 @@ export async function GET(req: Request) {
     let products = items
       .map((it) => {
         const stockQty = stockMap.get(it.item_code) ?? 0;
-
         const rawImg = it.image || null;
         const useItemImg = rawImg && !isPrivatePath(rawImg) ? resolveAbsolute(rawImg) : null;
         const fileImg = publicFileMap.get(it.item_code) || null;
-
         const price = priceMap.get(it.item_code);
         const priceNum = price ? Number(price.price_list_rate) : null;
-
         const slug = toSlug(it.item_name || it.item_code);
         const websiteRoute = cleanRoute(it.route) || `/products/${slug}`;
 
@@ -280,6 +301,8 @@ export async function GET(req: Request) {
         };
       })
       .filter(Boolean) as any[];
+
+    const beforeFilterCount = products.length;
 
     const minP = minPrice ? Number(minPrice) : null;
     const maxP = maxPrice ? Number(maxPrice) : null;
@@ -330,6 +353,36 @@ export async function GET(req: Request) {
           max_price: maxPrice,
         },
       },
+      debug: debug
+        ? {
+            env: {
+              base: ERP_BASE,
+              price_list: PRICE_LIST,
+              warehouse: WEBSITE_WAREHOUSE,
+              strict_publish: VU_STRICT_PUBLISH,
+            },
+            counts: {
+              items: items.length,
+              prices: prices.length,
+              bins: bins.length,
+              public_files: publicFileMap.size,
+              products_before_filters: beforeFilterCount,
+              products_after_filters: total,
+            },
+            samples: {
+              first_item_codes: items.slice(0, 10).map((x) => x.item_code),
+              first_price_item_codes: prices.slice(0, 10).map((x) => x.item_code),
+              first_bin_item_codes: bins.slice(0, 10).map((x) => x.item_code),
+              first_products: paged.slice(0, 5).map((x) => ({
+                id: x.id,
+                name: x.name,
+                stock_qty: x.stock_qty,
+                in_stock: x.in_stock,
+                price: x.price,
+              })),
+            },
+          }
+        : undefined,
     });
   } catch (e: any) {
     console.error("Products API error:", e);
