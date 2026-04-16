@@ -252,7 +252,6 @@ export async function GET(req: Request) {
     let products = items
       .map((it) => {
         const stockQty = stockMap.get(it.item_code) ?? 0;
-        if (stockQty <= 0) return null;
 
         const rawImg = it.image || null;
         const useItemImg = rawImg && !isPrivatePath(rawImg) ? resolveAbsolute(rawImg) : null;
@@ -306,7 +305,10 @@ export async function GET(req: Request) {
       );
     }
 
-    products.sort((a, b) => a.name.localeCompare(b.name));
+    products.sort((a, b) => {
+      if (a.in_stock !== b.in_stock) return a.in_stock ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
 
     const total = products.length;
     const pages = Math.max(Math.ceil(total / limit), 0);
