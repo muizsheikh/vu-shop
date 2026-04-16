@@ -1,181 +1,427 @@
 // /app/api/cod/route.ts
 import { NextResponse } from "next/server";
 
-// ----- Config -----
-const ONLINE_ITEM = process.env.ERP_ONLINE_ITEM_CODE || "ONLINE-SALE";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-// ----- ERPNext fetch wrapper -----
-async function erpnextFetch(path: string, opts: any = {}) {
-  const base = process.env.ERP_BASE_URL; // e.g. https://vapeustadcloud.com
-  const key = process.env.ERP_API_KEY;
-  const secret = process.env.ERP_API_SECRET;
-  if (!base || !key || !secret) {
-    throw new Error("ERP credentials missing (ERP_BASE_URL, ERP_API_KEY, ERP_API_SECRET)");
-  }
-  const url =
-    path.startsWith("http") || path.startsWith("/")
-      ? `${base}${path}`
-      : `${base}/api/resource/${path}`;
+const DEFAULT_CURRENCY = "PKR";
+const DEFAULT_COUNTRY = "Pakistan";
+const DEFAULT_CUSTOMER_GROUP = process.env.ERP_CUSTOMER_GROUP || "All Customer Groups";
+const DEFAULT_TERRITORY = process.env.ERP_TERRITORY || "All Territories";
 
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `token ${key}:${secret}`,
-    ...opts.headers,
-  };
-
-  const res = await fetch(url, { ...opts, headers });
-  const data = await res.json();
-  if (!res.ok) {
-    const msg = data?.message || JSON.stringify(data);
-    throw new Error(msg);
-  }
-  return data;
+function normBase(u: string) {
+  let x = (u || "").trim();
+  if (x && !/^https?:\/\//i.test(x)) x = `https://${x}`;
+  return x.replace(/\/+$/, "");
 }
 
-// Ensure "ONLINE-SALE" item exists (non-stock)
-async function ensureOnlineSaleItem() {
-  const q = await erpnextFetch(
-    `Item?fields=["name"]&filters=${encodeURIComponent(
-      JSON.stringify([["item_code", "=", ONLINE_ITEM]])
-    )}`
-  );
-  if (q?.data?.length) return q.data[0].name;
+function getEnv() {
+  const ERP_BASE_URL = normBase(process.env.ERP_BASE_URL || "");
+  const ERP_API_KEY = (process.env.ERP_API_KEY || "").trim();
+  const ERP_API_SECRET = (process.env.ERP_API_SECRET || "").trim();
 
-  const created = await erpnextFetch("Item", {
-    method: "POST",
-    body: JSON.stringify({
-      item_code: ONLINE_ITEM,
-      item_name: ONLINE_ITEM,
-      item_group: "All Item Groups",
-      stock_uom: "Nos",
-      is_stock_item: 0,
-      include_item_in_manufacturing: 0,
-      disabled: 0,
-    }),
+  if (!ERP_BASE_URL || !ERP_API_KEY || !ERP_API_SECRET) {
+    throw new Error(
+      "ERP credentials missing (ERP_BASE_URL, ERP_API_KEY, ERP_API_SECRET)"
+    );
+  }
+
+  return { ERP_BASE_URL, ERP_API_KEY, ERP_API_SECRET };
+}
+
+function authHeaders() {
+  const { ERP_API_KEY, ERP_API_SECRET } = getEnv();
+  return {
+    "Content-Type": "application/json",
+    Authorization: `token ${ERP_API_KEY}:${ERP_API_SECRET}`,
+  };
+}
+
+function buildResourceUrl(path: string) {
+  const { ERP_BASE_URL } = getEnv();
+
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith("/")) return `${ERP_BASE_URL}${path}`;
+  return `${ERP_BASE_URL}/api/resource/${path}`;
+}
+
+async function safeJson(res: Response) {
+  const ct = res.headers.get("content-type") || "";
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} ${res.statusText}: ${txt.slice(0, 400)}`);
+  }
+
+  if (ct.includes("application/json")) return res.json();
+
+  const txt = await res.text();
+  throw new Error(
+    `HTTP ${res.status} ${res.statusText} (non-JSON): ${txt.slice(0, 400)}`
+  );
+}
+
+async function erpnextFetch(path: string, opts: RequestInit = {}) {
+  const url = buildResourceUrl(path);
+  const res = await fetch(url, {
+    ...opts,
+    headers: {
+      ...authHeaders(),
+      ...(opts.headers || {}),
+    },
+    cache: "no-store",
   });
-  return created.data.name;
+
+  return safeJson(res);
+}
+
+function sanitizeString(value: unknown, fallback = "") {
+  return typeof value === "string" ? value.trim() || fallback : fallback;
+}
+
+function sanitizeEmail(value: unknown) {
+  const email = sanitizeString(value).toLowerCase();
+  if (!email) return "";
+  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  return ok ? email : "";
+}
+
+function sanitizePhone(value: unknown) {
+  return sanitizeString(value).slice(0, 50);
+}
+
+function sanitizeQty(value: unknown) {
+  const qty = Number(value);
+  if (!Number.isFinite(qty) || qty <= 0) return 0;
+  return Math.floor(qty);
+}
+
+function sanitizeRate(value: unknown) {
+  const rate = Number(value);
+  if (!Number.isFinite(rate) || rate < 0) return null;
+  return Math.round(rate * 100) / 100;
+}
+
+function sanitizeItemCode(value: unknown) {
+  return sanitizeString(value).slice(0, 140);
+}
+
+function sanitizeItemName(value: unknown) {
+  return sanitizeString(value).slice(0, 200);
+}
+
+type IncomingCartItem = {
+  item_code?: string;
+  name?: string;
+  qty?: number;
+  price?: number;
+};
+
+type NormalizedCartItem = {
+  item_code: string;
+  item_name: string;
+  qty: number;
+  rate: number;
+  amount: number;
+};
+
+function normalizeCartItems(rawItems: unknown): NormalizedCartItem[] {
+  if (!Array.isArray(rawItems)) {
+    throw new Error("Invalid payload: items must be an array");
+  }
+
+  const items: NormalizedCartItem[] = [];
+
+  for (const raw of rawItems as IncomingCartItem[]) {
+    const item_code = sanitizeItemCode(raw?.item_code);
+    const item_name = sanitizeItemName(raw?.name);
+    const qty = sanitizeQty(raw?.qty);
+    const rate = sanitizeRate(raw?.price);
+
+    if (!item_code || !item_name || !qty || rate === null) continue;
+
+    items.push({
+      item_code,
+      item_name,
+      qty,
+      rate,
+      amount: Math.round(qty * rate * 100) / 100,
+    });
+  }
+
+  if (!items.length) {
+    throw new Error("Cart empty or invalid");
+  }
+
+  return items;
+}
+
+async function findCustomerByEmail(email: string) {
+  const filters = encodeURIComponent(JSON.stringify([["email_id", "=", email]]));
+  const fields = encodeURIComponent(JSON.stringify(["name", "customer_name", "mobile_no"]));
+
+  const json = await erpnextFetch(
+    `Customer?filters=${filters}&fields=${fields}&limit_page_length=1`
+  );
+
+  return json?.data?.[0] || null;
+}
+
+async function createCustomer(input: {
+  name: string;
+  email: string;
+  phone?: string;
+}) {
+  const payload: Record<string, unknown> = {
+    customer_name: input.name,
+    customer_type: "Individual",
+    email_id: input.email,
+    customer_group: DEFAULT_CUSTOMER_GROUP,
+    territory: DEFAULT_TERRITORY,
+  };
+
+  if (input.phone) payload.mobile_no = input.phone;
+
+  const json = await erpnextFetch("Customer", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  return json?.data;
+}
+
+async function updateCustomerIfNeeded(
+  customerName: string,
+  input: { name: string; phone?: string }
+) {
+  const payload: Record<string, unknown> = {};
+
+  if (input.name) payload.customer_name = input.name;
+  if (input.phone) payload.mobile_no = input.phone;
+
+  if (!Object.keys(payload).length) return;
+
+  await erpnextFetch(`Customer/${encodeURIComponent(customerName)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function ensureCustomer(input: {
+  name: string;
+  email: string;
+  phone?: string;
+}) {
+  const existing = await findCustomerByEmail(input.email);
+
+  if (existing?.name) {
+    await updateCustomerIfNeeded(existing.name, {
+      name: input.name,
+      phone: input.phone,
+    }).catch(() => {});
+    return existing.name as string;
+  }
+
+  const created = await createCustomer(input);
+  if (!created?.name) {
+    throw new Error("Failed to create customer");
+  }
+  return created.name as string;
+}
+
+async function findShippingAddress(input: {
+  customerId: string;
+  address_line1: string;
+  city: string;
+  country: string;
+}) {
+  const filters = encodeURIComponent(
+    JSON.stringify([
+      ["address_line1", "=", input.address_line1],
+      ["city", "=", input.city],
+      ["country", "=", input.country],
+    ])
+  );
+
+  const fields = encodeURIComponent(JSON.stringify(["name"]));
+
+  const json = await erpnextFetch(
+    `Address?filters=${filters}&fields=${fields}&limit_page_length=10`
+  );
+
+  const rows = Array.isArray(json?.data) ? json.data : [];
+  if (!rows.length) return null;
+
+  for (const row of rows) {
+    const detail = await erpnextFetch(`Address/${encodeURIComponent(row.name)}`);
+    const links = Array.isArray(detail?.data?.links) ? detail.data.links : [];
+    const linked = links.some(
+      (l: any) =>
+        l?.link_doctype === "Customer" && String(l?.link_name || "") === input.customerId
+    );
+    if (linked) return detail.data.name;
+  }
+
+  return null;
+}
+
+async function createShippingAddress(input: {
+  customerId: string;
+  title: string;
+  phone?: string;
+  address_line1: string;
+  city: string;
+  country: string;
+}) {
+  const payload: Record<string, unknown> = {
+    address_title: input.title,
+    address_type: "Shipping",
+    address_line1: input.address_line1,
+    city: input.city,
+    country: input.country,
+    links: [{ link_doctype: "Customer", link_name: input.customerId }],
+  };
+
+  if (input.phone) payload.phone = input.phone;
+
+  const json = await erpnextFetch("Address", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  return json?.data?.name || null;
+}
+
+async function ensureShippingAddress(input: {
+  customerId: string;
+  title: string;
+  phone?: string;
+  address_line1: string;
+  city: string;
+  country: string;
+}) {
+  if (!input.address_line1 || !input.city) return undefined;
+
+  const existing = await findShippingAddress(input);
+  if (existing) return existing;
+
+  return createShippingAddress(input);
+}
+
+function getTodayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getTomorrowDate() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function buildSalesOrderItems(items: NormalizedCartItem[]) {
+  return items.map((it) => ({
+    item_code: it.item_code,
+    qty: it.qty,
+    rate: it.rate,
+    description: it.item_name,
+  }));
+}
+
+function buildOrderNote(items: NormalizedCartItem[], customer: { name: string; email: string; phone?: string }) {
+  const lines = items.map(
+    (it) =>
+      `• ${it.item_name} (${it.item_code}) × ${it.qty} @ Rs ${it.rate.toLocaleString()} = Rs ${it.amount.toLocaleString()}`
+  );
+
+  return [
+    "Website COD Order",
+    "",
+    `Customer: ${customer.name}`,
+    `Email: ${customer.email}`,
+    customer.phone ? `Phone: ${customer.phone}` : "",
+    "",
+    ...lines,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+async function createSalesOrder(payload: Record<string, unknown>) {
+  const json = await erpnextFetch("Sales Order", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  return json?.data;
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const items = body.items || [];
-    const customer = body.customer || {};
 
-    if (!Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ error: "Cart empty" }, { status: 400 });
-    }
+    const items = normalizeCartItems(body?.items);
 
-    const cname = (customer.name || "Guest Checkout").trim();
-    const cemail = (customer.email || "guest@vapeustad.com").trim();
-    const cphone = (customer.phone || "").trim();
-    const addr1 = (customer.address_line1 || "").trim();
-    const city = (customer.city || "").trim();
-    const country = (customer.country || "Pakistan").trim();
+    const customerName =
+      sanitizeString(body?.customer?.name, "Guest Checkout").slice(0, 140);
+    const customerEmail =
+      sanitizeEmail(body?.customer?.email) || "guest@vapeustad.com";
+    const customerPhone = sanitizePhone(body?.customer?.phone);
 
-    // 1) Ensure Customer (by email)
-    let customerId: string;
-    try {
-      const q = await erpnextFetch(
-        `Customer?filters=${encodeURIComponent(JSON.stringify([["email_id", "=", cemail]]))}`
-      );
-      if (q?.data?.length) {
-        customerId = q.data[0].name;
-        // optional: update phone
-        await erpnextFetch(`Customer/${customerId}`, {
-          method: "PUT",
-          body: JSON.stringify({ mobile_no: cphone || undefined }),
-        }).catch(() => {});
-      } else {
-        const create = await erpnextFetch("Customer", {
-          method: "POST",
-          body: JSON.stringify({
-            customer_name: cname,
-            customer_type: "Individual",
-            email_id: cemail,
-            mobile_no: cphone || undefined,
-            customer_group: "All Customer Groups",
-            territory: "All Territories",
-          }),
-        });
-        customerId = create.data.name;
-      }
-    } catch (err) {
-      console.error("Customer ensure error", err);
-      return NextResponse.json({ error: "Failed to ensure customer" }, { status: 500 });
-    }
+    const addressLine1 = sanitizeString(body?.customer?.address_line1).slice(0, 200);
+    const city = sanitizeString(body?.customer?.city).slice(0, 140);
+    const country = sanitizeString(body?.customer?.country, DEFAULT_COUNTRY).slice(0, 140);
 
-    // 2) Optional shipping address linked to Customer
-    let shippingAddressName: string | undefined = undefined;
-    if (addr1 && city) {
-      try {
-        const addrPayload = {
-          address_title: cname || customerId,
-          address_type: "Shipping",
-          address_line1: addr1,
-          city,
-          country,
-          phone: cphone || undefined,
-          links: [{ link_doctype: "Customer", link_name: customerId }],
-        };
-        const created = await erpnextFetch("Address", {
-          method: "POST",
-          body: JSON.stringify(addrPayload),
-        });
-        shippingAddressName = created?.data?.name;
-      } catch (e) {
-        console.warn("Address create warning:", (e as Error).message);
-      }
-    }
-
-    // 3) Ensure ONLINE-SALE item exists
-    await ensureOnlineSaleItem();
-
-    // 4) Aggregate totals + description
-    const grandTotal = items.reduce(
-      (sum: number, it: any) => sum + Number(it.price) * Number(it.qty),
-      0
-    );
-    const summary = items
-      .map(
-        (it: any) =>
-          `• ${it.name} × ${it.qty} @ Rs ${Number(it.price).toLocaleString()} = Rs ${(
-            Number(it.price) * Number(it.qty)
-          ).toLocaleString()}`
-      )
-      .join("\n");
-
-    // 5) Build SO payload with single ONLINE-SALE line
-    const deliveryDate = new Date();
-    deliveryDate.setDate(deliveryDate.getDate() + 1);
-
-    const soPayload: any = {
-      customer: customerId,
-      transaction_date: new Date().toISOString().slice(0, 10),
-      delivery_date: deliveryDate.toISOString().slice(0, 10),
-      currency: "PKR",
-      conversion_rate: 1,
-      items: [
-        {
-          item_code: ONLINE_ITEM,
-          qty: 1,
-          rate: grandTotal,
-          description: `Website Order\n${summary}`,
-        },
-      ],
-    };
-    if (shippingAddressName) soPayload.shipping_address_name = shippingAddressName;
-
-    // 6) Create SO
-    const so = await erpnextFetch("Sales Order", {
-      method: "POST",
-      body: JSON.stringify(soPayload),
+    const customerId = await ensureCustomer({
+      name: customerName,
+      email: customerEmail,
+      phone: customerPhone || undefined,
     });
 
-    console.log("✅ COD Sales Order created", so.data.name);
-    return NextResponse.json({ success: true, so: so.data.name });
+    const shippingAddressName = await ensureShippingAddress({
+      customerId,
+      title: customerName || customerId,
+      phone: customerPhone || undefined,
+      address_line1: addressLine1,
+      city,
+      country,
+    });
+
+    const soPayload: Record<string, unknown> = {
+      customer: customerId,
+      transaction_date: getTodayDate(),
+      delivery_date: getTomorrowDate(),
+      currency: DEFAULT_CURRENCY,
+      conversion_rate: 1,
+      items: buildSalesOrderItems(items),
+      note: buildOrderNote(items, {
+        name: customerName,
+        email: customerEmail,
+        phone: customerPhone || undefined,
+      }),
+    };
+
+    if (shippingAddressName) {
+      soPayload.shipping_address_name = shippingAddressName;
+    }
+
+    const so = await createSalesOrder(soPayload);
+
+    if (!so?.name) {
+      throw new Error("Sales Order created but no name returned");
+    }
+
+    return NextResponse.json({
+      success: true,
+      so: so.name,
+    });
   } catch (err: any) {
-    console.error("❌ COD API error", err);
-    return NextResponse.json({ error: err.message || "COD failed" }, { status: 500 });
+    console.error("POST /api/cod failed:", err);
+
+    return NextResponse.json(
+      {
+        error: err?.message || "COD failed",
+      },
+      { status: 500 }
+    );
   }
 }

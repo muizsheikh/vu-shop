@@ -1,4 +1,3 @@
-// /app/api/products/route.ts
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const revalidate = 60;
@@ -19,11 +18,12 @@ function normBase(u: string) {
 }
 
 const ERP_BASE = normBase(process.env.ERP_BASE_URL || "");
-const ERP_KEY = process.env.ERP_API_KEY || "";
-const ERP_SECRET = process.env.ERP_API_SECRET || "";
-const PRICE_LIST = process.env.ERP_PRICE_LIST || "Standard Selling";
-const WEBSITE_WAREHOUSE = process.env.WEBSITE_WAREHOUSE || "";
-const VU_STRICT_PUBLISH = (process.env.VU_STRICT_PUBLISH ?? "1").trim();
+const ERP_KEY = (process.env.ERP_API_KEY || "").trim();
+const ERP_SECRET = (process.env.ERP_API_SECRET || "").trim();
+const PRICE_LIST = (process.env.ERP_PRICE_LIST || "Standard Selling").trim();
+const WEBSITE_WAREHOUSE = (process.env.WEBSITE_WAREHOUSE || "").trim();
+const STRICT_PUBLISH = (process.env.VU_STRICT_PUBLISH || "1").trim() === "1";
+const PLACEHOLDER_IMAGE = "/images/placeholder.png";
 
 function assertEnv() {
   if (!ERP_BASE || !ERP_KEY || !ERP_SECRET) {
@@ -73,6 +73,21 @@ type ERPFile = {
   attached_to_name?: string | null;
 };
 
+type Product = {
+  item_code: string;
+  item_name: string;
+  description: string;
+  image: string;
+  price: number | null;
+  currency: string;
+  stock: number;
+  brand: string;
+  item_group: string;
+  slug: string;
+  route: string;
+  in_stock: boolean;
+};
+
 /* ---------- Helpers ---------- */
 function chunk<T>(arr: T[], size = 100) {
   const out: T[][] = [];
@@ -82,9 +97,16 @@ function chunk<T>(arr: T[], size = 100) {
 
 async function safeJson(res: Response) {
   const ct = res.headers.get("content-type") || "";
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} ${res.statusText}: ${txt.slice(0, 400)}`);
+  }
+
   if (ct.includes("application/json")) return res.json();
+
   const txt = await res.text();
-  throw new Error(`HTTP ${res.status} ${res.statusText} (non-JSON): ${txt.slice(0, 300)}`);
+  throw new Error(`HTTP ${res.status} ${res.statusText} (non-JSON): ${txt.slice(0, 400)}`);
 }
 
 function resolveAbsolute(raw?: string | null) {
@@ -95,16 +117,27 @@ function resolveAbsolute(raw?: string | null) {
 
 function isPrivatePath(p?: string | null) {
   if (!p) return false;
-  return /^\/?private\//i.test(p);
+  return /^\/?private\//i.test(p) || p.includes("/private/files/");
 }
 
 function toSlug(s: string) {
-  return s
+  return (s || "")
     .toString()
     .trim()
     .toLowerCase()
+    .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)+/g, "");
+}
+
+function sanitizeString(value: unknown, fallback = "") {
+  return typeof value === "string" ? value.trim() || fallback : fallback;
+}
+
+function parsePositiveNumber(value: string | null) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 function buildApiUrl(path: string, params?: Record<string, string>) {
@@ -148,7 +181,7 @@ async function erpResourceList<T>(
   });
 
   const json = await safeJson(res);
-  return (json?.data ?? []) as T[];
+  return Array.isArray(json?.data) ? (json.data as T[]) : [];
 }
 
 async function loadPublicFilesForItems(itemCodes: string[]) {
@@ -167,15 +200,28 @@ async function loadPublicFilesForItems(itemCodes: string[]) {
     });
 
     for (const f of files) {
-      const code = (f.attached_to_name || "").trim();
+      const code = sanitizeString(f.attached_to_name);
       if (!code || f.is_private) continue;
       if (!map.has(code)) {
-        map.set(code, resolveAbsolute(f.file_url) || "");
+        const abs = resolveAbsolute(f.file_url);
+        if (abs) map.set(code, abs);
       }
     }
   }
 
   return map;
+}
+
+function matchesSearch(p: Product, q: string) {
+  const qq = q.toLowerCase();
+  return (
+    p.item_name.toLowerCase().includes(qq) ||
+    p.item_code.toLowerCase().includes(qq) ||
+    p.slug.toLowerCase().includes(qq) ||
+    p.brand.toLowerCase().includes(qq) ||
+    p.item_group.toLowerCase().includes(qq) ||
+    p.description.toLowerCase().includes(qq)
+  );
 }
 
 /* ---------- GET ---------- */
@@ -184,31 +230,27 @@ export async function GET(req: Request) {
     assertEnv();
 
     const url = new URL(req.url);
-    const brand = (url.searchParams.get("brand") || "").trim();
-    const group = (url.searchParams.get("group") || "").trim();
-    const q = (url.searchParams.get("q") || "").trim();
-    const minPrice = url.searchParams.get("min_price");
-    const maxPrice = url.searchParams.get("max_price");
+    const brand = sanitizeString(url.searchParams.get("brand"));
+    const group = sanitizeString(url.searchParams.get("group"));
+    const q = sanitizeString(url.searchParams.get("q"));
+    const minPrice = parsePositiveNumber(url.searchParams.get("min_price"));
+    const maxPrice = parsePositiveNumber(url.searchParams.get("max_price"));
     const page = Math.max(parseInt(url.searchParams.get("page") || "1", 10) || 1, 1);
-    const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "12", 10) || 12, 1), 200);
+    const limit = Math.min(
+      Math.max(parseInt(url.searchParams.get("limit") || "12", 10) || 12, 1),
+      200
+    );
 
     const filters: any[] = [["disabled", "=", 0]];
-    if (VU_STRICT_PUBLISH !== "0") {
+    if (STRICT_PUBLISH) {
       filters.push(["vu_show_in_website", "=", 1]);
     }
-    if (brand) filters.push(["brand", "like", `%${brand}%`]);
-    if (group) filters.push(["item_group", "like", `%${group}%`]);
-
-    const or_filters = q
-      ? [
-          ["item_name", "like", `%${q}%`],
-          ["item_code", "like", `%${q}%`],
-          ["brand", "like", `%${q}%`],
-        ]
-      : undefined;
+    if (brand) filters.push(["brand", "=", brand]);
+    if (group) filters.push(["item_group", "=", group]);
 
     const items = await erpResourceList<ERPItem>("Item", {
       fields: [
+        "name",
         "item_code",
         "item_name",
         "image",
@@ -219,22 +261,34 @@ export async function GET(req: Request) {
         "vu_show_in_website",
       ],
       filters,
-      ...(or_filters ? { or_filters } : {}),
       order_by: "item_name asc",
       limit_page_length: 2000,
     });
 
     if (!items.length) {
-      return NextResponse.json({
-        products: [],
-        meta: {
-          page,
-          limit,
-          total: 0,
-          pages: 0,
-          filters: { brand, group, q, min_price: minPrice, max_price: maxPrice },
+      return NextResponse.json(
+        {
+          products: [],
+          meta: {
+            page,
+            limit,
+            total: 0,
+            pages: 0,
+            filters: {
+              brand,
+              group,
+              q,
+              min_price: minPrice,
+              max_price: maxPrice,
+            },
+          },
         },
-      });
+        {
+          headers: {
+            "Cache-Control": "s-maxage=60, stale-while-revalidate=300",
+          },
+        }
+      );
     }
 
     const codes = items.map((it) => it.item_code).filter(Boolean);
@@ -271,89 +325,85 @@ export async function GET(req: Request) {
 
     const publicFileMap = await loadPublicFilesForItems(codes);
 
-    let products = items.map((it) => {
-      const stockQty = stockMap.get(it.item_code) ?? 0;
+    let products: Product[] = items.map((it) => {
+      const stock = stockMap.get(it.item_code) ?? 0;
       const rawImg = it.image || null;
       const useItemImg = rawImg && !isPrivatePath(rawImg) ? resolveAbsolute(rawImg) : null;
       const fileImg = publicFileMap.get(it.item_code) || null;
 
-      const price = priceMap.get(it.item_code);
-      const priceNum = price ? Number(price.price_list_rate) : null;
+      const priceRow = priceMap.get(it.item_code);
+      const price = priceRow ? Number(priceRow.price_list_rate) : null;
 
-      const slug = toSlug(it.item_name || it.item_code);
-      const websiteRoute = `/products/${slug}`;
+      const item_name = sanitizeString(it.item_name, it.item_code);
+      const slug = toSlug(item_name || it.item_code);
 
       return {
-        id: it.item_code,
+        item_code: it.item_code,
+        item_name,
+        description: sanitizeString(it.description),
+        image: useItemImg || fileImg || PLACEHOLDER_IMAGE,
+        price,
+        currency: sanitizeString(priceRow?.currency, "PKR"),
+        stock,
+        brand: sanitizeString(it.brand),
+        item_group: sanitizeString(it.item_group),
         slug,
-        route: websiteRoute,
-        name: it.item_name ?? it.item_code,
-        image: useItemImg || fileImg || null,
-        price: priceNum,
-        currency: price?.currency || "PKR",
-        item_group: it.item_group ?? null,
-        brand: it.brand ?? null,
-        description: it.description ?? null,
-        stock_qty: stockQty,
-        in_stock: stockQty > 0,
-        disabled: !!(it.disabled ?? 0),
+        route: `/products/${slug}`,
+        in_stock: stock > 0,
       };
     });
 
-    const minP = minPrice ? Number(minPrice) : null;
-    const maxP = maxPrice ? Number(maxPrice) : null;
-
-    if (minP != null || maxP != null) {
+    if (minPrice != null || maxPrice != null) {
       products = products.filter((p) => {
         if (p.price == null) return false;
-        if (minP != null && p.price < minP) return false;
-        if (maxP != null && p.price > maxP) return false;
+        if (minPrice != null && p.price < minPrice) return false;
+        if (maxPrice != null && p.price > maxPrice) return false;
         return true;
       });
     }
 
     if (q) {
-      const qq = q.toLowerCase();
-      products = products.filter(
-        (p) =>
-          p.name.toLowerCase().includes(qq) ||
-          p.id.toLowerCase().includes(qq) ||
-          p.slug.toLowerCase().includes(qq) ||
-          (p.brand ?? "").toLowerCase().includes(qq) ||
-          (p.item_group ?? "").toLowerCase().includes(qq)
-      );
+      products = products.filter((p) => matchesSearch(p, q));
     }
 
     products.sort((a, b) => {
       if (a.in_stock !== b.in_stock) return a.in_stock ? -1 : 1;
-      return a.name.localeCompare(b.name);
+      return a.item_name.localeCompare(b.item_name);
     });
 
     const total = products.length;
-    const pages = Math.max(Math.ceil(total / limit), 0);
+    const pages = total > 0 ? Math.ceil(total / limit) : 0;
     const start = (page - 1) * limit;
     const paged = products.slice(start, start + limit);
 
-    return NextResponse.json({
-      products: paged,
-      meta: {
-        page,
-        limit,
-        total,
-        pages,
-        filters: {
-          brand,
-          group,
-          q,
-          min_price: minPrice,
-          max_price: maxPrice,
+    return NextResponse.json(
+      {
+        products: paged,
+        meta: {
+          page,
+          limit,
+          total,
+          pages,
+          filters: {
+            brand,
+            group,
+            q,
+            min_price: minPrice,
+            max_price: maxPrice,
+          },
         },
       },
-    });
+      {
+        headers: {
+          "Cache-Control": "s-maxage=60, stale-while-revalidate=300",
+        },
+      }
+    );
   } catch (e: any) {
-    console.error("Products API error:", e);
+    console.error("GET /api/products failed:", e);
+
     return NextResponse.json(
-      { error: e.message || "Failed to load products" },
+      { error: e?.message || "Failed to load products" },
       { status: 500 }
     );
   }
