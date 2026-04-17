@@ -85,7 +85,7 @@ function HeroSlider() {
                   className="object-cover"
                   priority={i === 0}
                 />
-                <div className="absolute inset-0 bg-gradient-to-r from-black/42 via-black/16 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/25 to-transparent" />
               </div>
             ))}
 
@@ -95,11 +95,11 @@ function HeroSlider() {
                   Vape Ustad
                 </span>
 
-                <h1 className="mt-5 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl md:text-6xl">
+                <h1 className="mt-5 text-4xl font-extrabold leading-[1.05] tracking-tight drop-shadow-[0_4px_20px_rgba(0,0,0,0.4)] sm:text-5xl md:text-6xl">
                   Premium vaping products with a clean shopping experience
                 </h1>
 
-                <p className="mt-4 max-w-[520px] text-sm leading-6 text-white/90 sm:text-[15px] md:text-base">
+                <p className="mt-4 max-w-[520px] text-sm leading-6 text-white/90 drop-shadow-[0_4px_20px_rgba(0,0,0,0.4)] sm:text-[15px] md:text-base">
                   Explore original products, trusted brands, and a smoother
                   buying journey designed for speed, clarity, and confidence.
                 </p>
@@ -107,7 +107,7 @@ function HeroSlider() {
                 <div className="mt-7 flex flex-wrap gap-3">
                   <Link
                     href="/products"
-                    className="inline-flex min-h-[50px] items-center justify-center rounded-2xl bg-vu-red px-6 py-3 text-sm font-semibold text-white transition hover:opacity-95"
+                    className="inline-flex min-h-[50px] items-center justify-center rounded-2xl bg-[#a30105] px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_25px_rgba(163,1,5,0.35)] transition hover:bg-[#8a0004]"
                   >
                     Shop Now
                   </Link>
