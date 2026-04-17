@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import ProductCard from "@/components/ProductCard";
@@ -61,10 +61,19 @@ function ProductsInner() {
   const page = params.get("page") || "1";
   const minPrice = params.get("min_price") || "";
   const maxPrice = params.get("max_price") || "";
+  const sort = params.get("sort") || "";
   const inStockOnly = params.get("in_stock") === "1";
 
   const [minInput, setMinInput] = useState(minPrice);
   const [maxInput, setMaxInput] = useState(maxPrice);
+
+  useEffect(() => {
+    setMinInput(minPrice);
+  }, [minPrice]);
+
+  useEffect(() => {
+    setMaxInput(maxPrice);
+  }, [maxPrice]);
 
   const apiUrl = `/api/products?brand=${encodeURIComponent(
     brand
@@ -116,20 +125,22 @@ function ProductsInner() {
       );
     }
 
-    products.sort((a, b) => {
-      const ai = a.in_stock === false || a.stock_qty === 0 ? 1 : 0;
-      const bi = b.in_stock === false || b.stock_qty === 0 ? 1 : 0;
-
-      if (ai !== bi) return ai - bi;
-
-      const aName = (a.name || "").trim();
-      const bName = (b.name || "").trim();
-
-      return aName.localeCompare(bName);
-    });
+    if (sort === "price_asc") {
+      products.sort((a, b) => {
+        const aPrice = typeof a.price === "number" ? a.price : Number.POSITIVE_INFINITY;
+        const bPrice = typeof b.price === "number" ? b.price : Number.POSITIVE_INFINITY;
+        return aPrice - bPrice;
+      });
+    } else if (sort === "price_desc") {
+      products.sort((a, b) => {
+        const aPrice = typeof a.price === "number" ? a.price : Number.NEGATIVE_INFINITY;
+        const bPrice = typeof b.price === "number" ? b.price : Number.NEGATIVE_INFINITY;
+        return bPrice - aPrice;
+      });
+    }
 
     return products;
-  }, [rawProducts, inStockOnly]);
+  }, [rawProducts, inStockOnly, sort]);
 
   const dynamicBrands = useMemo(() => {
     const set = new Set(
@@ -262,7 +273,14 @@ function ProductsInner() {
           clear pricing, and fast browsing by filters.
         </p>
 
-        {(brand || group || category || q || minPrice || maxPrice || inStockOnly) && (
+        {(brand ||
+          group ||
+          category ||
+          q ||
+          minPrice ||
+          maxPrice ||
+          inStockOnly ||
+          sort) && (
           <div className="mt-4 flex flex-wrap gap-2">
             {brand ? <FilterChip label="Brand" value={brand} /> : null}
             {group ? <FilterChip label="Group" value={group} /> : null}
@@ -271,6 +289,12 @@ function ProductsInner() {
             {minPrice ? <FilterChip label="Min" value={minPrice} /> : null}
             {maxPrice ? <FilterChip label="Max" value={maxPrice} /> : null}
             {inStockOnly ? <FilterChip label="Stock" value="In Stock" /> : null}
+            {sort === "price_asc" ? (
+              <FilterChip label="Sort" value="Price Low to High" />
+            ) : null}
+            {sort === "price_desc" ? (
+              <FilterChip label="Sort" value="Price High to Low" />
+            ) : null}
 
             <button
               type="button"
@@ -406,18 +430,34 @@ function ProductsInner() {
         </aside>
 
         <div>
-          <div className="mb-5 flex flex-col gap-3 rounded-[28px] border border-neutral-200 bg-white p-5 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:flex-row md:items-center md:justify-between">
+          <div className="mb-5 flex flex-col gap-4 rounded-[28px] border border-neutral-200 bg-white p-5 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-lg font-bold text-neutral-950">
                 {sorted.length} Product{sorted.length === 1 ? "" : "s"} Found
               </h2>
               <p className="mt-1 text-sm text-neutral-500">
-                In-stock products are shown first for a smoother shopping flow.
+                Sort products by price or keep the default ERP order.
               </p>
             </div>
 
-            <div className="text-sm text-neutral-500">
-              Premium selection by Vape Ustad
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                Sort By
+              </span>
+
+              <select
+                value={sort}
+                onChange={(e) =>
+                  updateFilters({
+                    sort: e.target.value || null,
+                  })
+                }
+                className="min-h-[44px] rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm font-medium text-neutral-900 outline-none transition focus:border-neutral-300 focus:bg-white"
+              >
+                <option value="">Default</option>
+                <option value="price_asc">Price: Low to High</option>
+                <option value="price_desc">Price: High to Low</option>
+              </select>
             </div>
           </div>
 
