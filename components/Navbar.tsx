@@ -25,10 +25,10 @@ export default function Navbar() {
           <Image
             src="/images/logo.png"
             alt="Vape Ustad"
-            width={220}
-            height={60}
+            width={400}
+            height={74}
             priority
-            className="h-auto w-[160px] md:w-[200px] object-contain"
+            className="h-auto w-[220px] md:w-[300px] object-contain"
           />
         </Link>
 
