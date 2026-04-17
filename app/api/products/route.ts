@@ -50,6 +50,7 @@ type ERPItem = {
   item_group?: string | null;
   brand?: string | null;
   description?: string | null;
+  website_category?: string | null;
   disabled?: 0 | 1;
   vu_show_in_website?: 0 | 1;
 };
@@ -83,6 +84,7 @@ type Product = {
   stock: number;
   brand: string;
   item_group: string;
+  category: string;
   slug: string;
   route: string;
   in_stock: boolean;
@@ -220,33 +222,9 @@ function matchesSearch(p: Product, q: string) {
     p.slug.toLowerCase().includes(qq) ||
     p.brand.toLowerCase().includes(qq) ||
     p.item_group.toLowerCase().includes(qq) ||
+    p.category.toLowerCase().includes(qq) ||
     p.description.toLowerCase().includes(qq)
   );
-}
-
-function normalizeForMatch(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function matchesCategory(p: Product, category: string) {
-  const needle = normalizeForMatch(category);
-  if (!needle) return true;
-
-  const haystacks = [
-    p.item_name,
-    p.item_code,
-    p.brand,
-    p.item_group,
-    p.description,
-    p.slug,
-  ].map((v) => normalizeForMatch(v));
-
-  return haystacks.some((h) => h.includes(needle));
 }
 
 /* ---------- GET ---------- */
@@ -273,6 +251,7 @@ export async function GET(req: Request) {
     }
     if (brand) filters.push(["brand", "=", brand]);
     if (group) filters.push(["item_group", "=", group]);
+    if (category) filters.push(["website_category", "=", category]);
 
     const items = await erpResourceList<ERPItem>("Item", {
       fields: [
@@ -283,6 +262,7 @@ export async function GET(req: Request) {
         "item_group",
         "brand",
         "description",
+        "website_category",
         "disabled",
         "vu_show_in_website",
       ],
@@ -374,15 +354,12 @@ export async function GET(req: Request) {
         stock,
         brand: sanitizeString(it.brand),
         item_group: sanitizeString(it.item_group),
+        category: sanitizeString(it.website_category),
         slug,
         route: `/products/${slug}`,
         in_stock: stock > 0,
       };
     });
-
-    if (category) {
-      products = products.filter((p) => matchesCategory(p, category));
-    }
 
     if (minPrice != null || maxPrice != null) {
       products = products.filter((p) => {
