@@ -1,4 +1,3 @@
-// /app/checkout/page.tsx
 "use client";
 
 import { useRouter } from "next/navigation";
@@ -6,12 +5,15 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useCartStore } from "@/store/cart";
 
+type ApiError = {
+  error?: string;
+};
+
 export default function CheckoutPage() {
   const router = useRouter();
   const { items, total, clear } = useCartStore();
-  const [loading, setLoading] = useState<null | "stripe" | "cod" | "jc" | "ep">(null);
+  const [loading, setLoading] = useState(false);
 
-  // Customer fields (for COD, optional prefill for future)
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -19,180 +21,195 @@ export default function CheckoutPage() {
   const [city, setCity] = useState("");
 
   const cartEmpty = items.length === 0;
+
+  const totalValue = useMemo(() => Number(total() || 0), [total]);
   const totalPKR = useMemo(
-    () => new Intl.NumberFormat("en-PK").format(Number(total() || 0)),
-    [total]
+    () => new Intl.NumberFormat("en-PK").format(totalValue),
+    [totalValue]
   );
 
-  // ---- Stripe (Card Payment) ----
-  const handleStripe = async () => {
-    if (cartEmpty) return toast.error("Cart is empty");
-    setLoading("stripe");
-    try {
-      const line_items = items.map((it) => ({
-        price_data: {
-          currency: "pkr",
-          product_data: { name: it.name },
-          unit_amount: Math.round(Number(it.price) * 100),
-        },
-        quantity: it.qty,
-      }));
+  const emailOk = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ line_items }),
-      });
+  const formatPKR = (value: number) =>
+    new Intl.NumberFormat("en-PK").format(Number(value || 0));
 
-      const data = await res.json();
-      if (res.ok && data?.url) {
-        toast.success("Redirecting to secure payment…");
-        window.location.href = data.url as string;
-      } else {
-        toast.error(data?.error || "Stripe checkout failed");
-      }
-    } catch (e) {
-      console.error(e);
-      toast.error("Stripe error");
-    } finally {
-      setLoading(null);
+  const validate = () => {
+    if (cartEmpty) {
+      toast.error("Cart is empty");
+      return false;
     }
+    if (!name.trim()) {
+      toast.error("Name is required");
+      return false;
+    }
+    if (!email.trim()) {
+      toast.error("Email is required");
+      return false;
+    }
+    if (!emailOk(email)) {
+      toast.error("Valid email required");
+      return false;
+    }
+    if (!phone.trim()) {
+      toast.error("Phone is required");
+      return false;
+    }
+    if (!address.trim()) {
+      toast.error("Address is required");
+      return false;
+    }
+    if (!city.trim()) {
+      toast.error("City is required");
+      return false;
+    }
+    return true;
   };
 
-  // ---- COD (ERPNext SO + email + Shipping Address) ----
   const handleCOD = async () => {
-    if (cartEmpty) return toast.error("Cart is empty");
+    if (!validate()) return;
 
-    // basic validation
-    if (!name.trim()) return toast.error("Name is required");
-    if (!email.trim()) return toast.error("Email is required");
-    if (!phone.trim()) return toast.error("Phone is required");
-    if (!address.trim()) return toast.error("Address is required");
-    if (!city.trim()) return toast.error("City is required");
+    setLoading(true);
 
-    setLoading("cod");
     try {
+      const payload = {
+        items: items.map((it) => ({
+          item_code: it.id,
+          name: it.name,
+          qty: it.qty,
+          price: it.price,
+        })),
+        customer: {
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+          address_line1: address.trim(),
+          city: city.trim(),
+          country: "Pakistan",
+        },
+      };
+
       const res = await fetch("/api/cod", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          customer: {
-            name: name.trim(),
-            email: email.trim(),
-            phone: phone.trim(),
-            address_line1: address.trim(),
-            city: city.trim(),
-            country: "Pakistan",
-          },
-        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
 
-      if (res.ok) {
-        clear();
-        toast.success(`Order placed (COD) — ${data.so}`);
-        router.push("/success");
-      } else {
+      const data: ApiError & { success?: boolean; so?: string } = await res
+        .json()
+        .catch(() => ({}));
+
+      if (!res.ok) {
         toast.error(data?.error || "COD order failed");
+        return;
       }
-    } catch (e) {
-      console.error(e);
-      toast.error("COD error");
-    } finally {
-      setLoading(null);
-    }
-  };
 
-  const comingSoon = (method: "JazzCash" | "Easypaisa") => {
-    toast(`${method} is coming soon`, { description: "We’re wiring up the gateway." });
+      clear();
+      toast.success(`Order placed successfully — ${data.so || "Sales Order created"}`);
+      router.push(`/success?method=cod${data.so ? `&so=${encodeURIComponent(data.so)}` : ""}`);
+    } catch (error) {
+      console.error("COD checkout failed:", error);
+      toast.error("COD order failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="mx-auto max-w-lg p-6">
-      <h1 className="mb-2 text-2xl font-bold">Choose Payment Method</h1>
+    <div className="mx-auto max-w-3xl p-6">
+      <h1 className="mb-2 text-2xl font-bold">Checkout</h1>
       <p className="mb-6 opacity-80">
-        Total: <span className="font-semibold">Rs {totalPKR}</span>
+        Payment method: <span className="font-semibold">Cash on Delivery</span>
       </p>
 
-      {/* Customer info (used for COD now, can prefill Stripe later) */}
-      <div className="mb-6 space-y-3">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Full name"
-          className="w-full rounded-xl border border-white/20 bg-transparent px-4 py-3 outline-none"
-        />
-        <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
-          type="email"
-          className="w-full rounded-xl border border-white/20 bg-transparent px-4 py-3 outline-none"
-        />
-        <input
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="Phone"
-          className="w-full rounded-xl border border-white/20 bg-transparent px-4 py-3 outline-none"
-        />
-        <input
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          placeholder="Address line 1"
-          className="w-full rounded-xl border border-white/20 bg-transparent px-4 py-3 outline-none"
-        />
-        <input
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
-          placeholder="City"
-          className="w-full rounded-xl border border-white/20 bg-transparent px-4 py-3 outline-none"
-        />
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <h2 className="mb-4 text-lg font-semibold">Customer Details</h2>
+
+          <div className="space-y-3">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Full name"
+              className="w-full rounded-xl border border-white/20 bg-transparent px-4 py-3 outline-none"
+            />
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              type="email"
+              className="w-full rounded-xl border border-white/20 bg-transparent px-4 py-3 outline-none"
+            />
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Phone"
+              className="w-full rounded-xl border border-white/20 bg-transparent px-4 py-3 outline-none"
+            />
+            <input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="Address line 1"
+              className="w-full rounded-xl border border-white/20 bg-transparent px-4 py-3 outline-none"
+            />
+            <input
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              placeholder="City"
+              className="w-full rounded-xl border border-white/20 bg-transparent px-4 py-3 outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <h2 className="mb-4 text-lg font-semibold">Order Summary</h2>
+
+          {cartEmpty ? (
+            <p className="text-sm text-amber-400">
+              Your cart is empty — add items before checking out.
+            </p>
+          ) : (
+            <>
+              <div className="space-y-3">
+                {items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-start justify-between gap-3 border-b border-white/10 pb-3"
+                  >
+                    <div>
+                      <div className="font-medium">{item.name}</div>
+                      <div className="text-sm opacity-70">
+                        Qty: {item.qty}
+                      </div>
+                    </div>
+
+                    <div className="text-right font-medium">
+                      Rs {formatPKR(item.price * item.qty)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between text-lg font-semibold">
+                <span>Total</span>
+                <span>Rs {totalPKR}</span>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-3">
-        <button
-          onClick={handleStripe}
-          disabled={loading !== null}
-          className="w-full rounded-xl bg-vu-red px-6 py-3 font-semibold text-white transition hover:opacity-90 active:scale-95 disabled:opacity-60"
-        >
-          {loading === "stripe" ? "Redirecting…" : "Card Payment (Stripe)"}
-        </button>
-
+      <div className="mt-6">
         <button
           onClick={handleCOD}
-          disabled={loading !== null}
-          className="w-full rounded-xl border border-white/20 px-6 py-3 font-semibold hover:bg-white/5 active:scale-95 disabled:opacity-60"
+          disabled={loading || cartEmpty}
+          className="w-full rounded-xl bg-vu-red px-6 py-3 font-semibold text-white transition hover:opacity-90 active:scale-95 disabled:opacity-60"
         >
-          {loading === "cod" ? "Placing order…" : "Cash on Delivery"}
-        </button>
-
-        <button
-          onClick={() => {
-            comingSoon("JazzCash");
-          }}
-          disabled={loading !== null}
-          className="w-full rounded-xl border border-white/20 px-6 py-3 font-semibold hover:bg-white/5 active:scale-95 disabled:opacity-60"
-        >
-          JazzCash (Coming Soon)
-        </button>
-
-        <button
-          onClick={() => {
-            comingSoon("Easypaisa");
-          }}
-          disabled={loading !== null}
-          className="w-full rounded-xl border border-white/20 px-6 py-3 font-semibold hover:bg-white/5 active:scale-95 disabled:opacity-60"
-        >
-          Easypaisa (Coming Soon)
+          {loading ? "Placing order..." : "Place Cash on Delivery Order"}
         </button>
       </div>
-
-      {cartEmpty && (
-        <p className="mt-4 text-sm text-amber-400">
-          Your cart is empty — add items before checking out.
-        </p>
-      )}
     </div>
   );
 }
