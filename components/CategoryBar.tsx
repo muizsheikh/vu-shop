@@ -108,13 +108,13 @@ export default function CategoryBar() {
   return (
     <div className="hidden border-t border-neutral-200 bg-[#fefefe] md:block">
       <div className="mx-auto max-w-7xl px-4 md:px-6">
-        <div className="flex h-14 items-center gap-6 overflow-x-auto whitespace-nowrap scrollbar-hide">
+        <div className="relative flex h-14 items-center gap-6 whitespace-nowrap overflow-visible">
           {categoryLinks.map((item, index) => {
             const isHome = index === 0;
-            const hasDropdown = item.hasDropdown && item.submenu?.length;
+            const hasDropdown = Boolean(item.hasDropdown && item.submenu?.length);
 
             return (
-              <div key={item.label} className="group relative h-full">
+              <div key={item.label} className="group relative h-full shrink-0">
                 <Link
                   href={item.href}
                   className={`relative inline-flex h-full items-center gap-1 text-[14px] font-medium uppercase tracking-[0.02em] transition ${
@@ -138,8 +138,8 @@ export default function CategoryBar() {
                 </Link>
 
                 {hasDropdown ? (
-                  <div className="pointer-events-none absolute left-0 top-full z-50 pt-3 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100">
-                    <div className="min-w-[260px] rounded-2xl border border-neutral-200 bg-white p-3 shadow-[0_20px_60px_rgba(0,0,0,0.08)]">
+                  <div className="invisible absolute left-0 top-full z-[80] pt-0 opacity-0 transition-all duration-200 group-hover:visible group-hover:opacity-100">
+                    <div className="mt-0 min-w-[260px] rounded-2xl border border-neutral-200 bg-white p-3 shadow-[0_20px_60px_rgba(0,0,0,0.08)]">
                       <div className="mb-2 border-b border-neutral-100 px-2 pb-2">
                         <Link
                           href={item.href}
