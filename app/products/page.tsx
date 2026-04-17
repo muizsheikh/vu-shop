@@ -81,6 +81,7 @@ function ProductsInner() {
 
   const [minInput, setMinInput] = useState(minPrice);
   const [maxInput, setMaxInput] = useState(maxPrice);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
     setMinInput(minPrice);
@@ -89,6 +90,10 @@ function ProductsInner() {
   useEffect(() => {
     setMaxInput(maxPrice);
   }, [maxPrice]);
+
+  useEffect(() => {
+    setMobileFiltersOpen(false);
+  }, [brand, group, category, q, page, minPrice, maxPrice, sort, inStockOnly]);
 
   const apiUrl = `/api/products?brand=${encodeURIComponent(
     brand
@@ -192,6 +197,7 @@ function ProductsInner() {
         data?.pagination?.page ??
         data?.pagination?.current_page ??
         data?.pagination?.currentPage ??
+        data?.meta?.page ??
         page ??
         1
     ) || 1
@@ -204,6 +210,7 @@ function ProductsInner() {
       data?.pagination?.total_pages ??
       data?.pagination?.totalPages ??
       data?.pagination?.pages ??
+      data?.meta?.pages ??
       1
   );
 
@@ -278,8 +285,171 @@ function ProductsInner() {
   };
 
   const clearAll = () => {
+    setMobileFiltersOpen(false);
     router.push("/products");
   };
+
+  const filtersContent = (
+    <>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-neutral-950">Filters</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            Narrow down your product search.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={clearAll}
+          className="text-xs font-semibold uppercase tracking-[0.14em] text-[#a30105] transition hover:opacity-80"
+        >
+          Clear all
+        </button>
+      </div>
+
+      <div className="space-y-5">
+        <SidebarSection title="Stock">
+          <button
+            type="button"
+            onClick={toggleInStock}
+            className={`inline-flex min-h-[42px] w-full items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
+              inStockOnly
+                ? "bg-vu-red text-white shadow-sm"
+                : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
+            }`}
+          >
+            In Stock Only
+          </button>
+        </SidebarSection>
+
+        <SidebarSection title="Categories">
+          <div className="flex flex-col gap-2">
+            {dynamicCategories.length ? (
+              dynamicCategories.map((c) => {
+                const isActive = category === c;
+
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => toggleCategory(c)}
+                    className={`inline-flex min-h-[42px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
+                      isActive
+                        ? "bg-vu-red text-white shadow-sm"
+                        : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                );
+              })
+            ) : (
+              <div className="text-sm text-neutral-500">
+                No categories available for current selection.
+              </div>
+            )}
+          </div>
+        </SidebarSection>
+
+        <SidebarSection title="Groups">
+          <div className="flex flex-col gap-2">
+            {dynamicGroups.length ? (
+              dynamicGroups.map((g) => {
+                const isActive = group === g;
+
+                return (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => toggleGroup(g)}
+                    className={`inline-flex min-h-[42px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
+                      isActive
+                        ? "bg-vu-red text-white shadow-sm"
+                        : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
+                    }`}
+                  >
+                    {g}
+                  </button>
+                );
+              })
+            ) : (
+              <div className="text-sm text-neutral-500">
+                No groups available for current selection.
+              </div>
+            )}
+          </div>
+        </SidebarSection>
+
+        <SidebarSection title="Brands">
+          <div className="flex flex-col gap-2">
+            {(dynamicBrands.length ? dynamicBrands : BRANDS).map((b) => {
+              const isActive = activeBrand === b.toLowerCase();
+
+              return (
+                <button
+                  key={b}
+                  type="button"
+                  onClick={() => toggleBrand(b)}
+                  className={`inline-flex min-h-[42px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
+                    isActive
+                      ? "bg-vu-red text-white shadow-sm"
+                      : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
+                  }`}
+                >
+                  {b}
+                </button>
+              );
+            })}
+          </div>
+        </SidebarSection>
+
+        <SidebarSection title="Price Range">
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                value={minInput}
+                onChange={(e) => setMinInput(e.target.value)}
+                placeholder="Min"
+                className="min-h-[44px] rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-900 outline-none transition focus:border-neutral-300 focus:bg-white"
+              />
+
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                value={maxInput}
+                onChange={(e) => setMaxInput(e.target.value)}
+                placeholder="Max"
+                className="min-h-[44px] rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-900 outline-none transition focus:border-neutral-300 focus:bg-white"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={applyPriceFilter}
+              className="inline-flex min-h-[44px] w-full items-center justify-center rounded-2xl border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-50"
+            >
+              Apply Price
+            </button>
+          </div>
+        </SidebarSection>
+      </div>
+
+      <div className="mt-6 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setMobileFiltersOpen(false)}
+          className="inline-flex min-h-[46px] w-full items-center justify-center rounded-2xl bg-vu-red px-5 py-3 text-sm font-semibold text-white transition hover:opacity-95"
+        >
+          Done
+        </button>
+      </div>
+    </>
+  );
 
   if (error) {
     return (
@@ -384,155 +554,54 @@ function ProductsInner() {
         )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[290px_1fr] lg:items-start">
-        <aside className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.05)] lg:sticky lg:top-24">
-          <div className="mb-6 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-bold text-neutral-950">Filters</h2>
-              <p className="mt-1 text-sm text-neutral-500">
-                Narrow down your product search.
-              </p>
-            </div>
+      <div className="mb-5 flex items-center gap-3 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setMobileFiltersOpen(true)}
+          className="inline-flex min-h-[44px] items-center justify-center rounded-2xl border border-neutral-200 bg-white px-5 py-2 text-sm font-semibold text-neutral-900 shadow-[0_10px_30px_rgba(0,0,0,0.04)] transition hover:bg-neutral-50"
+        >
+          Filters
+        </button>
 
-            <button
-              type="button"
-              onClick={clearAll}
-              className="text-xs font-semibold uppercase tracking-[0.14em] text-[#a30105] transition hover:opacity-80"
-            >
-              Clear all
-            </button>
-          </div>
+        <div className="text-sm text-neutral-500">
+          {sorted.length} Product{sorted.length === 1 ? "" : "s"}
+        </div>
+      </div>
 
-          <div className="space-y-5">
-            <SidebarSection title="Stock">
+      {mobileFiltersOpen ? (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <button
+            type="button"
+            aria-label="Close filters"
+            onClick={() => setMobileFiltersOpen(false)}
+            className="absolute inset-0 bg-black/35"
+          />
+          <div className="absolute inset-y-0 left-0 flex w-[88%] max-w-sm flex-col bg-[#fefefe] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-bold text-neutral-950">Filters</h2>
+                <p className="mt-1 text-xs uppercase tracking-[0.14em] text-neutral-500">
+                  Refine products
+                </p>
+              </div>
+
               <button
                 type="button"
-                onClick={toggleInStock}
-                className={`inline-flex min-h-[42px] w-full items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                  inStockOnly
-                    ? "bg-vu-red text-white shadow-sm"
-                    : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
-                }`}
+                onClick={() => setMobileFiltersOpen(false)}
+                className="inline-flex h-10 min-w-10 items-center justify-center rounded-full border border-neutral-200 bg-white text-lg text-neutral-700 transition hover:bg-neutral-50"
               >
-                In Stock Only
+                ×
               </button>
-            </SidebarSection>
+            </div>
 
-            <SidebarSection title="Categories">
-              <div className="flex flex-col gap-2">
-                {dynamicCategories.length ? (
-                  dynamicCategories.map((c) => {
-                    const isActive = category === c;
-
-                    return (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => toggleCategory(c)}
-                        className={`inline-flex min-h-[42px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                          isActive
-                            ? "bg-vu-red text-white shadow-sm"
-                            : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
-                        }`}
-                      >
-                        {c}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="text-sm text-neutral-500">
-                    No categories available for current selection.
-                  </div>
-                )}
-              </div>
-            </SidebarSection>
-
-            <SidebarSection title="Groups">
-              <div className="flex flex-col gap-2">
-                {dynamicGroups.length ? (
-                  dynamicGroups.map((g) => {
-                    const isActive = group === g;
-
-                    return (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => toggleGroup(g)}
-                        className={`inline-flex min-h-[42px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                          isActive
-                            ? "bg-vu-red text-white shadow-sm"
-                            : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
-                        }`}
-                      >
-                        {g}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="text-sm text-neutral-500">
-                    No groups available for current selection.
-                  </div>
-                )}
-              </div>
-            </SidebarSection>
-
-            <SidebarSection title="Brands">
-              <div className="flex flex-col gap-2">
-                {(dynamicBrands.length ? dynamicBrands : BRANDS).map((b) => {
-                  const isActive = activeBrand === b.toLowerCase();
-
-                  return (
-                    <button
-                      key={b}
-                      type="button"
-                      onClick={() => toggleBrand(b)}
-                      className={`inline-flex min-h-[42px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                        isActive
-                          ? "bg-vu-red text-white shadow-sm"
-                          : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
-                      }`}
-                    >
-                      {b}
-                    </button>
-                  );
-                })}
-              </div>
-            </SidebarSection>
-
-            <SidebarSection title="Price Range">
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    value={minInput}
-                    onChange={(e) => setMinInput(e.target.value)}
-                    placeholder="Min"
-                    className="min-h-[44px] rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-900 outline-none transition focus:border-neutral-300 focus:bg-white"
-                  />
-
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    value={maxInput}
-                    onChange={(e) => setMaxInput(e.target.value)}
-                    placeholder="Max"
-                    className="min-h-[44px] rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-900 outline-none transition focus:border-neutral-300 focus:bg-white"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={applyPriceFilter}
-                  className="inline-flex min-h-[44px] w-full items-center justify-center rounded-2xl border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-50"
-                >
-                  Apply Price
-                </button>
-              </div>
-            </SidebarSection>
+            <div className="flex-1 overflow-y-auto px-5 py-5">{filtersContent}</div>
           </div>
+        </div>
+      ) : null}
+
+      <div className="grid gap-6 lg:grid-cols-[290px_1fr] lg:items-start">
+        <aside className="hidden rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.05)] lg:sticky lg:top-24 lg:block">
+          {filtersContent}
         </aside>
 
         <div>
@@ -626,7 +695,10 @@ function ProductsInner() {
                           typeof prev === "number" && pageNumber - prev > 1;
 
                         return (
-                          <div key={pageNumber} className="flex items-center gap-2">
+                          <div
+                            key={pageNumber}
+                            className="flex items-center gap-2"
+                          >
                             {showEllipsis ? (
                               <span className="px-1 text-sm text-neutral-400">
                                 …
