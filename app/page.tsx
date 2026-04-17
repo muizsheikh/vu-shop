@@ -165,49 +165,90 @@ function HeroSlider() {
 
 /** ---------------- New Trending Collage ---------------- **/
 function TrendingCollageSection() {
+  const [revealed, setRevealed] = useState(false);
+  const sectionRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const node = sectionRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setRevealed(true);
+          observer.disconnect();
+        }
+      },
+      {
+        threshold: 0.28,
+        rootMargin: "0px 0px -8% 0px",
+      }
+    );
+
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, []);
+
   const collageItems = [
     {
       src: "/images/banners/banner1.jpg",
       alt: "Trending showcase 1",
-      className:
+      posClass:
         "left-[2%] top-[16%] h-[150px] w-[120px] rounded-[24px] sm:left-[4%] sm:top-[18%] sm:h-[190px] sm:w-[150px] lg:h-[220px] lg:w-[180px]",
+      hiddenClass: "-translate-x-20 -translate-y-8 rotate-[-10deg] scale-[0.92]",
+      delay: "0ms",
     },
     {
       src: "/images/banners/banner2.jpg",
       alt: "Trending showcase 2",
-      className:
+      posClass:
         "left-[20%] top-[0%] h-[130px] w-[180px] rounded-[24px] sm:left-[22%] sm:h-[170px] sm:w-[250px] lg:h-[210px] lg:w-[320px]",
+      hiddenClass: "-translate-x-14 -translate-y-12 rotate-[-6deg] scale-[0.95]",
+      delay: "100ms",
     },
     {
       src: "/images/banners/banner3.jpg",
       alt: "Trending showcase 3",
-      className:
+      posClass:
         "right-[6%] top-[0%] h-[150px] w-[200px] rounded-[24px] sm:right-[8%] sm:h-[200px] sm:w-[280px] lg:h-[260px] lg:w-[360px]",
+      hiddenClass: "translate-x-20 -translate-y-10 rotate-[8deg] scale-[0.94]",
+      delay: "180ms",
     },
     {
       src: "/images/banners/banner4.jpg",
       alt: "Trending showcase 4",
-      className:
+      posClass:
         "left-[8%] bottom-[12%] h-[170px] w-[220px] rounded-[24px] sm:left-[12%] sm:h-[220px] sm:w-[300px] lg:h-[280px] lg:w-[380px]",
+      hiddenClass: "-translate-x-24 translate-y-16 rotate-[-8deg] scale-[0.93]",
+      delay: "240ms",
     },
     {
       src: "/images/banners/banner5.jpg",
       alt: "Trending showcase 5",
-      className:
+      posClass:
         "right-[20%] bottom-[10%] h-[150px] w-[210px] rounded-[24px] sm:right-[22%] sm:h-[190px] sm:w-[260px] lg:h-[240px] lg:w-[330px]",
+      hiddenClass: "translate-x-12 translate-y-14 rotate-[7deg] scale-[0.95]",
+      delay: "320ms",
     },
     {
       src: "/images/banners/banner2.jpg",
       alt: "Trending showcase 6",
-      className:
+      posClass:
         "right-[0%] bottom-[18%] h-[150px] w-[130px] rounded-[24px] sm:right-[2%] sm:h-[190px] sm:w-[170px] lg:h-[230px] lg:w-[220px]",
+      hiddenClass: "translate-x-24 translate-y-6 rotate-[10deg] scale-[0.9]",
+      delay: "380ms",
     },
   ];
 
   return (
-    <section className="pt-6 md:pt-10">
+    <section ref={sectionRef} className="pt-6 md:pt-10">
       <div className="overflow-hidden rounded-[32px] border border-neutral-200 bg-white px-4 py-8 shadow-[0_20px_60px_rgba(0,0,0,0.05)] sm:px-6 md:px-8 md:py-10 lg:px-10">
-        <div className="mx-auto max-w-3xl text-center">
+        <div
+          className={`mx-auto max-w-3xl text-center transition-all duration-700 ${
+            revealed ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
+          }`}
+        >
           <span className="inline-flex rounded-full border border-neutral-200 bg-neutral-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-700">
             New Trending
           </span>
@@ -224,10 +265,33 @@ function TrendingCollageSection() {
         <div className="relative mt-10 h-[560px] w-full overflow-hidden rounded-[28px] bg-[#f8f8f8] sm:h-[620px] lg:h-[760px]">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(163,1,5,0.04),transparent_42%)]" />
 
+          <div
+            className={`absolute inset-0 flex items-center justify-center px-4 transition-all duration-[1100ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              revealed ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0"
+            }`}
+            style={{ transitionDelay: "120ms" }}
+          >
+            <div className="max-w-[780px] text-center">
+              <div
+                className={`text-[34px] font-light uppercase tracking-[0.08em] text-[#a30105] transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] sm:text-[54px] md:text-[72px] lg:text-[88px] ${
+                  revealed ? "scale-100 opacity-100" : "scale-[0.88] opacity-0"
+                }`}
+                style={{ transitionDelay: "220ms" }}
+              >
+                NEW <span className="font-extrabold">TRENDING</span>
+              </div>
+            </div>
+          </div>
+
           {collageItems.map((item, index) => (
             <div
               key={item.alt + index}
-              className={`absolute overflow-hidden border border-white/70 bg-white shadow-[0_18px_45px_rgba(0,0,0,0.12)] ${item.className}`}
+              className={`absolute overflow-hidden border border-white/70 bg-white shadow-[0_18px_45px_rgba(0,0,0,0.12)] transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${item.posClass} ${
+                revealed
+                  ? "translate-x-0 translate-y-0 rotate-0 scale-100 opacity-100"
+                  : `${item.hiddenClass} opacity-0`
+              }`}
+              style={{ transitionDelay: item.delay }}
             >
               <Image
                 src={item.src}
@@ -238,14 +302,6 @@ function TrendingCollageSection() {
               />
             </div>
           ))}
-
-          <div className="absolute inset-0 flex items-center justify-center px-4">
-            <div className="max-w-[780px] text-center">
-              <div className="text-[34px] font-light uppercase tracking-[0.08em] text-[#a30105] sm:text-[54px] md:text-[72px] lg:text-[88px]">
-                NEW <span className="font-extrabold">TRENDING</span>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </section>
