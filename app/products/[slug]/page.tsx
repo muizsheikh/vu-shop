@@ -53,6 +53,35 @@ function formatPKR(value: number | null) {
   return new Intl.NumberFormat("en-PK").format(value);
 }
 
+function stripHtml(html?: string | null) {
+  if (!html) return "";
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function getStockMeta(stock: number, isOutOfStock: boolean) {
+  if (isOutOfStock) {
+    return {
+      label: "Out of Stock",
+      className:
+        "border-red-200 bg-red-50 text-red-700",
+    };
+  }
+
+  if (stock > 0 && stock <= 5) {
+    return {
+      label: "Low Stock",
+      className:
+        "border-amber-200 bg-amber-50 text-amber-700",
+    };
+  }
+
+  return {
+    label: "In Stock",
+    className:
+      "border-emerald-200 bg-emerald-50 text-emerald-700",
+  };
+}
+
 export default async function ProductDetail({
   params,
 }: {
@@ -72,6 +101,7 @@ export default async function ProductDetail({
   const stock = Number(p.stock ?? 0);
   const isOutOfStock = p.in_stock === false || stock <= 0;
   const pricePKR = formatPKR(p.price);
+  const stockMeta = getStockMeta(stock, isOutOfStock);
 
   const ui = {
     id: p.item_code,
@@ -82,11 +112,14 @@ export default async function ProductDetail({
     description: p.description || "",
   };
 
+  const descriptionText = stripHtml(ui.description);
+
   const related = products
     .filter((x) => x.item_code !== p.item_code)
     .filter((x) => {
       const sameBrand = p.brand && x.brand && p.brand === x.brand;
-      const sameGroup = p.item_group && x.item_group && p.item_group === x.item_group;
+      const sameGroup =
+        p.item_group && x.item_group && p.item_group === x.item_group;
       return sameBrand || sameGroup;
     })
     .slice(0, 4);
@@ -96,105 +129,209 @@ export default async function ProductDetail({
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Link
           href="/products"
-          className="inline-flex items-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white"
+          className="inline-flex items-center rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-900"
         >
           ← Back to products
         </Link>
 
         {p.brand ? (
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
+          <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-600">
             {p.brand}
           </span>
         ) : null}
 
         {p.item_group ? (
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
+          <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-600">
             {p.item_group}
           </span>
         ) : null}
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-2 lg:gap-12">
-        <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]">
-          <div className="aspect-square w-full overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={ui.image}
-              alt={ui.name}
-              className="h-full w-full object-cover"
-            />
+      <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12">
+        <div className="space-y-4">
+          <div className="overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+            <div className="aspect-square w-full overflow-hidden bg-neutral-50">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={ui.image}
+                alt={ui.name}
+                className="h-full w-full object-cover"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 gap-3 sm:grid-cols-5">
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="overflow-hidden rounded-2xl border border-neutral-200 bg-white"
+              >
+                <div className="aspect-square bg-neutral-50">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={ui.image}
+                    alt={`${ui.name} preview ${idx + 1}`}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="flex flex-col justify-center">
-          <div className="mb-3">
-            {isOutOfStock ? (
-              <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-300">
-                Out of stock
+        <div className="flex flex-col">
+          <div className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)] md:p-8">
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <span
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${stockMeta.className}`}
+              >
+                {stockMeta.label}
               </span>
-            ) : (
-              <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">
-                In stock
-              </span>
-            )}
-          </div>
 
-          <h1 className="text-3xl font-extrabold tracking-tight text-white md:text-4xl">
-            {ui.name}
-          </h1>
+              {p.brand ? (
+                <span className="text-sm font-medium text-neutral-500">
+                  Brand: <span className="text-neutral-800">{p.brand}</span>
+                </span>
+              ) : null}
 
-          <div className="mt-4">
-            {pricePKR ? (
-              <div className="text-3xl font-bold text-vu-red md:text-4xl">
-                Rs {pricePKR}
+              {p.item_group ? (
+                <span className="text-sm font-medium text-neutral-500">
+                  Category:{" "}
+                  <span className="text-neutral-800">{p.item_group}</span>
+                </span>
+              ) : null}
+            </div>
+
+            <h1 className="text-3xl font-extrabold tracking-tight text-neutral-950 md:text-4xl">
+              {ui.name}
+            </h1>
+
+            <div className="mt-5">
+              {pricePKR ? (
+                <div className="flex items-end gap-2">
+                  <span className="text-3xl font-bold text-vu-red md:text-4xl">
+                    Rs {pricePKR}
+                  </span>
+                </div>
+              ) : (
+                <div className="text-lg font-medium text-neutral-500">
+                  Price on request
+                </div>
+              )}
+            </div>
+
+            {!isOutOfStock ? (
+              <div className="mt-3 text-sm text-neutral-600">
+                Available stock:{" "}
+                <span className="font-semibold text-neutral-900">{stock}</span>
               </div>
             ) : (
-              <div className="text-lg text-white/60">Price on request</div>
+              <div className="mt-3 text-sm text-neutral-600">
+                This item is currently unavailable.
+              </div>
             )}
+
+            {descriptionText ? (
+              <p className="mt-6 text-[15px] leading-7 text-neutral-600">
+                {descriptionText}
+              </p>
+            ) : (
+              <p className="mt-6 text-[15px] leading-7 text-neutral-500">
+                Premium vaping product from Vape Ustad. Original quality,
+                carefully selected stock, and a smooth shopping experience.
+              </p>
+            )}
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              {isOutOfStock ? (
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex min-h-[52px] w-full cursor-not-allowed items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-100 px-5 py-3 text-base font-semibold text-neutral-400 sm:w-auto sm:min-w-[220px]"
+                >
+                  Out of stock
+                </button>
+              ) : (
+                <>
+                  <AddToCartButton p={ui} />
+                  <Link
+                    href="/checkout"
+                    className="inline-flex min-h-[52px] w-full items-center justify-center rounded-2xl border border-neutral-300 bg-white px-5 py-3 text-base font-semibold text-neutral-900 transition hover:bg-neutral-50 sm:w-auto sm:min-w-[180px]"
+                  >
+                    Buy Now
+                  </Link>
+                </>
+              )}
+            </div>
+
+            <div className="mt-8 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+                <div className="text-sm font-semibold text-neutral-900">
+                  100% Authentic Products
+                </div>
+                <div className="mt-1 text-sm text-neutral-600">
+                  Carefully selected stock with trusted product sourcing.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+                <div className="text-sm font-semibold text-neutral-900">
+                  Fast Delivery
+                </div>
+                <div className="mt-1 text-sm text-neutral-600">
+                  Quick order handling with smooth checkout experience.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+                <div className="text-sm font-semibold text-neutral-900">
+                  Cash on Delivery
+                </div>
+                <div className="mt-1 text-sm text-neutral-600">
+                  Easy ordering for customers who prefer COD.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+                <div className="text-sm font-semibold text-neutral-900">
+                  Secure Checkout
+                </div>
+                <div className="mt-1 text-sm text-neutral-600">
+                  Safe checkout flow with clean order confirmation.
+                </div>
+              </div>
+            </div>
           </div>
 
-          {!isOutOfStock ? (
-            <div className="mt-3 text-sm text-white/60">
-              Available stock:{" "}
-              <span className="font-semibold text-white">{stock}</span>
-            </div>
-          ) : null}
-
           {ui.description ? (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-white/60">
-                Product details
+            <div className="mt-6 rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:p-8">
+              <h2 className="mb-4 text-lg font-bold text-neutral-950">
+                Product Details
               </h2>
               <div
-                className="prose prose-invert max-w-none text-white/80"
+                className="prose max-w-none prose-p:text-neutral-700 prose-li:text-neutral-700 prose-strong:text-neutral-900"
                 dangerouslySetInnerHTML={{ __html: ui.description }}
               />
             </div>
           ) : null}
-
-          <div className="mt-8">
-            {isOutOfStock ? (
-              <button
-                type="button"
-                disabled
-                className="w-full cursor-not-allowed rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-base font-semibold text-white/40 md:w-auto md:min-w-[220px]"
-              >
-                Out of stock
-              </button>
-            ) : (
-              <AddToCartButton p={ui} />
-            )}
-          </div>
         </div>
       </div>
 
       {related.length ? (
         <div className="mt-14">
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-white">Related products</h2>
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-neutral-950">
+                Related Products
+              </h2>
+              <p className="mt-1 text-sm text-neutral-600">
+                Similar picks you may also like.
+              </p>
+            </div>
+
             <Link
               href="/products"
-              className="text-sm text-white/65 transition hover:text-white"
+              className="text-sm font-medium text-neutral-700 transition hover:text-neutral-950"
             >
               View all →
             </Link>
@@ -205,20 +342,40 @@ export default async function ProductDetail({
               <Link
                 key={item.item_code}
                 href={item.route || `/products/${item.slug || toSlug(item.item_name)}`}
-                className="group overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition hover:-translate-y-1 hover:border-white/20"
+                className="group overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-[0_12px_35px_rgba(0,0,0,0.05)] transition hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(0,0,0,0.08)]"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={item.image || "/images/placeholder.png"}
-                  alt={item.item_name}
-                  className="h-52 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                />
+                <div className="overflow-hidden bg-neutral-50">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={item.image || "/images/placeholder.png"}
+                    alt={item.item_name}
+                    className="h-56 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                  />
+                </div>
+
                 <div className="p-4">
-                  <h3 className="line-clamp-2 font-semibold text-white">
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {item.brand ? (
+                      <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-600">
+                        {item.brand}
+                      </span>
+                    ) : null}
+
+                    {item.item_group ? (
+                      <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-600">
+                        {item.item_group}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <h3 className="line-clamp-2 min-h-[48px] text-base font-semibold text-neutral-900">
                     {item.item_name}
                   </h3>
-                  <div className="mt-2 font-semibold text-vu-red">
-                    {item.price != null ? `Rs ${formatPKR(item.price)}` : "Price on request"}
+
+                  <div className="mt-3 font-bold text-vu-red">
+                    {item.price != null
+                      ? `Rs ${formatPKR(item.price)}`
+                      : "Price on request"}
                   </div>
                 </div>
               </Link>

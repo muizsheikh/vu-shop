@@ -1,4 +1,3 @@
-// /components/ProductCard.tsx
 import Link from "next/link";
 
 type ProductCardInput = {
@@ -29,46 +28,78 @@ const normalizeRoute = (route?: string | null) => {
   return r.startsWith("/") ? r : `/${r}`;
 };
 
+function stripHtml(html?: string | null) {
+  if (!html) return "";
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function getStockMeta(stockQty?: number | null, inStock?: boolean) {
+  const qty = Number(stockQty ?? 0);
+  const isOutOfStock = inStock === false || qty <= 0;
+
+  if (isOutOfStock) {
+    return {
+      label: "Out of Stock",
+      className: "border-red-200 bg-red-50 text-red-700",
+      showQty: false,
+    };
+  }
+
+  if (qty > 0 && qty <= 5) {
+    return {
+      label: "Low Stock",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+      showQty: true,
+    };
+  }
+
+  return {
+    label: "In Stock",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    showQty: true,
+  };
+}
+
 export default function ProductCard({ p }: { p: ProductCardInput }) {
   const slug = p.slug || toSlug(p.name) || toSlug(p.id);
   const href = normalizeRoute(p.route) || `/products/${slug}`;
-  const pricePKR = p.price != null ? new Intl.NumberFormat("en-PK").format(p.price) : null;
-  const isOutOfStock = p.in_stock === false || p.stock_qty === 0;
+  const pricePKR =
+    p.price != null ? new Intl.NumberFormat("en-PK").format(p.price) : null;
+
+  const stockMeta = getStockMeta(p.stock_qty, p.in_stock);
+  const cleanDescription = stripHtml(p.description);
 
   return (
     <Link
       href={href}
-      className="group block overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-[0_10px_30px_rgba(0,0,0,.25)] transition hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.07]"
+      className="group block overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-[0_12px_35px_rgba(0,0,0,0.05)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(0,0,0,0.08)]"
     >
-      <div className="relative overflow-hidden">
+      <div className="relative overflow-hidden bg-neutral-50">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={p.image || "/placeholder.png"}
+          src={p.image || "/images/placeholder.png"}
           alt={p.name}
-          className="h-56 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+          className="h-60 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
         />
 
-        {isOutOfStock ? (
-          <div className="absolute left-3 top-3 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-300 backdrop-blur">
-            Out of stock
-          </div>
-        ) : (
-          <div className="absolute left-3 top-3 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300 backdrop-blur">
-            In stock
-          </div>
-        )}
+        <div
+          className={`absolute left-3 top-3 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] backdrop-blur ${stockMeta.className}`}
+        >
+          {stockMeta.label}
+        </div>
       </div>
 
-      <div className="p-4 text-sm">
+      <div className="p-4">
         {(p.brand || p.item_group) && (
-          <div className="mb-2 flex flex-wrap gap-2">
+          <div className="mb-3 flex flex-wrap gap-2">
             {p.brand ? (
-              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] uppercase tracking-wide text-white/65">
+              <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-600">
                 {p.brand}
               </span>
             ) : null}
+
             {p.item_group ? (
-              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] uppercase tracking-wide text-white/65">
+              <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-600">
                 {p.item_group}
               </span>
             ) : null}
@@ -76,21 +107,39 @@ export default function ProductCard({ p }: { p: ProductCardInput }) {
         )}
 
         <div className="flex items-start justify-between gap-3">
-          <h3 className="line-clamp-2 font-semibold leading-6 text-white">{p.name}</h3>
-          <div className="shrink-0 font-semibold text-vu-red">
-            {pricePKR ? <>Rs {pricePKR}</> : <span className="opacity-70">—</span>}
+          <h3 className="line-clamp-2 min-h-[52px] text-base font-semibold leading-6 text-neutral-900">
+            {p.name}
+          </h3>
+
+          <div className="shrink-0 text-right font-bold text-vu-red">
+            {pricePKR ? (
+              <>Rs {pricePKR}</>
+            ) : (
+              <span className="font-medium text-neutral-400">—</span>
+            )}
           </div>
         </div>
 
-        {p.description ? (
-          <p className="mt-2 line-clamp-2 text-white/65">{p.description}</p>
-        ) : null}
+        {cleanDescription ? (
+          <p className="mt-2 line-clamp-2 text-sm leading-6 text-neutral-600">
+            {cleanDescription}
+          </p>
+        ) : (
+          <p className="mt-2 line-clamp-2 text-sm leading-6 text-neutral-400">
+            Premium product from Vape Ustad.
+          </p>
+        )}
 
-        {!isOutOfStock && typeof p.stock_qty === "number" ? (
-          <div className="mt-3 text-xs text-white/45">
-            Stock: <span className="font-semibold text-white/70">{p.stock_qty}</span>
+        {stockMeta.showQty && typeof p.stock_qty === "number" ? (
+          <div className="mt-3 text-xs font-medium text-neutral-500">
+            Stock:{" "}
+            <span className="font-semibold text-neutral-800">{p.stock_qty}</span>
           </div>
-        ) : null}
+        ) : (
+          <div className="mt-3 text-xs font-medium text-red-600">
+            Currently unavailable
+          </div>
+        )}
       </div>
     </Link>
   );

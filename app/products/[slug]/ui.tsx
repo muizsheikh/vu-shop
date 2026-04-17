@@ -16,7 +16,8 @@ export default function AddToCartButton({ p }: { p: CartProduct }) {
 
   return (
     <button
-      className="inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium transition active:scale-95 bg-vu-red text-white hover:opacity-90 h-10 text-base"
+      type="button"
+      className="inline-flex min-h-[52px] w-full items-center justify-center rounded-2xl bg-vu-red px-5 py-3 text-base font-semibold text-white transition hover:opacity-95 active:scale-[0.98] sm:w-auto sm:min-w-[220px]"
       onClick={() =>
         add(
           {
