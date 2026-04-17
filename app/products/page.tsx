@@ -3,7 +3,6 @@
 import { Suspense, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
-import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
 
 type Product = {
@@ -105,6 +104,48 @@ function ProductsInner() {
   const GROUPS = ["Devices", "Coils", "E-Liquids", "Disposables", "Tanks"];
 
   const activeBrand = brand.toLowerCase();
+
+  const rawProducts: Product[] = Array.isArray(data?.products) ? data.products : [];
+
+  const sorted = useMemo(() => {
+    let products = [...rawProducts];
+
+    if (inStockOnly) {
+      products = products.filter(
+        (p) => !(p.in_stock === false || p.stock_qty === 0)
+      );
+    }
+
+    products.sort((a, b) => {
+      const ai = a.in_stock === false || a.stock_qty === 0 ? 1 : 0;
+      const bi = b.in_stock === false || b.stock_qty === 0 ? 1 : 0;
+
+      if (ai !== bi) return ai - bi;
+
+      const aName = (a.name || "").trim();
+      const bName = (b.name || "").trim();
+
+      return aName.localeCompare(bName);
+    });
+
+    return products;
+  }, [rawProducts, inStockOnly]);
+
+  const dynamicBrands = useMemo(() => {
+    const set = new Set(
+      sorted.map((p) => (p.brand || "").trim()).filter(Boolean)
+    );
+    return BRANDS.filter((b) => set.has(b));
+  }, [sorted]);
+
+  const dynamicGroups = useMemo(() => {
+    const set = new Set(
+      sorted.map((p) => (p.item_group || "").trim()).filter(Boolean)
+    );
+    const known = GROUPS.filter((g) => set.has(g));
+    const extra = Array.from(set).filter((g) => !GROUPS.includes(g));
+    return [...known, ...extra];
+  }, [sorted]);
 
   const updateFilters = (updates: Record<string, string | null | undefined>) => {
     const next = new URLSearchParams(params.toString());
@@ -209,48 +250,6 @@ function ProductsInner() {
       </div>
     );
   }
-
-  let products: Product[] = Array.isArray(data.products) ? data.products : [];
-
-  if (inStockOnly) {
-    products = products.filter(
-      (p) => !(p.in_stock === false || p.stock_qty === 0)
-    );
-  }
-
-  const sorted = [...products].sort((a, b) => {
-    const ai = a.in_stock === false || a.stock_qty === 0 ? 1 : 0;
-    const bi = b.in_stock === false || b.stock_qty === 0 ? 1 : 0;
-
-    if (ai !== bi) return ai - bi;
-
-    const aName = (a.name || "").trim();
-    const bName = (b.name || "").trim();
-
-    return aName.localeCompare(bName);
-  });
-
-  const dynamicBrands = useMemo(() => {
-    const set = new Set(
-      sorted
-        .map((p) => (p.brand || "").trim())
-        .filter(Boolean)
-    );
-
-    return BRANDS.filter((b) => set.has(b));
-  }, [sorted]);
-
-  const dynamicGroups = useMemo(() => {
-    const set = new Set(
-      sorted
-        .map((p) => (p.item_group || "").trim())
-        .filter(Boolean)
-    );
-
-    const known = GROUPS.filter((g) => set.has(g));
-    const extra = Array.from(set).filter((g) => !GROUPS.includes(g));
-    return [...known, ...extra];
-  }, [sorted]);
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-8 md:px-6 md:py-10">
