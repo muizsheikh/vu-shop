@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import ThemeSwitch from "./ThemeSwitch";
 import CartDrawer from "./CartDrawer";
+import CategoryBar from "./CategoryBar";
 import { useState } from "react";
 import { Menu, X, Search } from "lucide-react";
 
@@ -17,10 +18,8 @@ export default function Navbar() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 bg-white text-black border-b border-neutral-200 shadow-sm">
+    <header className="sticky top-0 z-50 border-b border-neutral-200 bg-[#fefefe] text-black shadow-sm">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
-
-        {/* LOGO IMAGE */}
         <Link href="/" onClick={() => setOpen(false)}>
           <Image
             src="/images/logo.png"
@@ -28,25 +27,21 @@ export default function Navbar() {
             width={400}
             height={74}
             priority
-            className="h-auto w-[220px] md:w-[300px] object-contain"
+            className="h-auto w-[220px] object-contain md:w-[300px]"
           />
         </Link>
 
-        {/* Desktop Nav */}
         <nav className="hidden items-center gap-3 md:flex">
-
-          {/* Search */}
           <div className="flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-3 py-2">
-            <Search size={16} className="text-neutral-500 mr-2" />
+            <Search size={16} className="mr-2 text-neutral-500" />
             <input
               type="text"
               placeholder="Search products..."
-              className="bg-transparent outline-none text-sm w-40 placeholder:text-neutral-500"
+              className="w-40 bg-transparent text-sm outline-none placeholder:text-neutral-500"
             />
           </div>
 
-          {/* Links */}
-          <div className="flex items-center rounded-full border border-neutral-200 bg-white p-1 shadow-sm">
+          <div className="flex items-center rounded-full border border-neutral-200 bg-[#fefefe] p-1 shadow-sm">
             {navLinks.map((item) => (
               <Link
                 key={item.href}
@@ -58,20 +53,18 @@ export default function Navbar() {
             ))}
           </div>
 
-          {/* Actions */}
           <div className="ml-2 flex items-center gap-2">
             <CartDrawer />
             <ThemeSwitch />
           </div>
         </nav>
 
-        {/* Mobile */}
         <div className="flex items-center gap-2 md:hidden">
           <CartDrawer />
 
           <button
             onClick={() => setOpen((v) => !v)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-white text-black shadow-sm transition hover:bg-neutral-100"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-[#fefefe] text-black shadow-sm transition hover:bg-neutral-100"
             aria-label="Open menu"
           >
             {open ? <X size={20} /> : <Menu size={20} />}
@@ -79,17 +72,16 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile Drawer */}
-      {open && (
-        <div className="border-t border-neutral-200 bg-white px-4 py-4 shadow-lg md:hidden">
+      <CategoryBar />
 
-          {/* Search */}
+      {open && (
+        <div className="border-t border-neutral-200 bg-[#fefefe] px-4 py-4 shadow-lg md:hidden">
           <div className="mb-4 flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-3 py-2">
-            <Search size={16} className="text-neutral-500 mr-2" />
+            <Search size={16} className="mr-2 text-neutral-500" />
             <input
               type="text"
               placeholder="Search products..."
-              className="bg-transparent outline-none text-sm w-full placeholder:text-neutral-500"
+              className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-500"
             />
           </div>
 
