@@ -1,11 +1,18 @@
-// /app/products/[slug]/ui.tsx
 "use client";
 
-import { useCartStore } from "@/store/cart"; // ✅ fixed
-import type { Product } from "@/lib/products";
+import { useCartStore } from "@/store/cart";
 
-export default function AddToCartButton({ p }: { p: Product }) {
-  const add = useCartStore((s) => s.add); // ✅ fixed
+type CartProduct = {
+  id: string;
+  slug?: string;
+  name: string;
+  price: number;
+  image: string;
+  description?: string;
+};
+
+export default function AddToCartButton({ p }: { p: CartProduct }) {
+  const add = useCartStore((s) => s.add);
 
   return (
     <button
@@ -13,7 +20,7 @@ export default function AddToCartButton({ p }: { p: Product }) {
       onClick={() =>
         add(
           {
-            id: p.slug || p.id, // ✅ prefer slug if available
+            id: p.id,
             slug: p.slug,
             name: p.name,
             price: p.price,

@@ -1,4 +1,3 @@
-// /app/products/[slug]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
@@ -7,14 +6,15 @@ import AddToCartButton from "./ui";
 export const dynamic = "force-dynamic";
 
 type Product = {
-  id: string;
+  item_code: string;
+  item_name: string;
   slug?: string | null;
   route?: string | null;
-  name: string;
-  image: string | null;
+  image: string;
   price: number | null;
+  currency?: string | null;
   description?: string | null;
-  stock_qty?: number | null;
+  stock?: number | null;
   in_stock?: boolean;
   brand?: string | null;
   item_group?: string | null;
@@ -25,6 +25,7 @@ const toSlug = (s: string) =>
     .toString()
     .trim()
     .toLowerCase()
+    .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)+/g, "");
 
@@ -63,25 +64,26 @@ export default async function ProductDetail({
   const p =
     products.find((x) => x.slug === slug) ||
     products.find((x) => lastSegment(x.route) === slug) ||
-    products.find((x) => toSlug(x.name) === slug) ||
-    products.find((x) => toSlug(x.id) === slug);
+    products.find((x) => toSlug(x.item_name) === slug) ||
+    products.find((x) => toSlug(x.item_code) === slug);
 
   if (!p) return notFound();
 
+  const stock = Number(p.stock ?? 0);
+  const isOutOfStock = p.in_stock === false || stock <= 0;
   const pricePKR = formatPKR(p.price);
-  const isOutOfStock = p.in_stock === false || (p.stock_qty ?? 0) <= 0;
 
   const ui = {
-    id: p.id,
+    id: p.item_code,
     slug: p.slug || slug,
-    name: p.name,
+    name: p.item_name,
     price: p.price ?? 0,
-    image: p.image || "/placeholder.png",
+    image: p.image || "/images/placeholder.png",
     description: p.description || "",
   };
 
   const related = products
-    .filter((x) => x.id !== p.id)
+    .filter((x) => x.item_code !== p.item_code)
     .filter((x) => {
       const sameBrand = p.brand && x.brand && p.brand === x.brand;
       const sameGroup = p.item_group && x.item_group && p.item_group === x.item_group;
@@ -151,10 +153,10 @@ export default async function ProductDetail({
             )}
           </div>
 
-          {typeof p.stock_qty === "number" && !isOutOfStock ? (
+          {!isOutOfStock ? (
             <div className="mt-3 text-sm text-white/60">
               Available stock:{" "}
-              <span className="font-semibold text-white">{p.stock_qty}</span>
+              <span className="font-semibold text-white">{stock}</span>
             </div>
           ) : null}
 
@@ -163,7 +165,10 @@ export default async function ProductDetail({
               <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-white/60">
                 Product details
               </h2>
-              <p className="leading-7 text-white/80">{ui.description}</p>
+              <div
+                className="prose prose-invert max-w-none text-white/80"
+                dangerouslySetInnerHTML={{ __html: ui.description }}
+              />
             </div>
           ) : null}
 
@@ -177,7 +182,7 @@ export default async function ProductDetail({
                 Out of stock
               </button>
             ) : (
-              <AddToCartButton p={ui as any} />
+              <AddToCartButton p={ui} />
             )}
           </div>
         </div>
@@ -198,18 +203,20 @@ export default async function ProductDetail({
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {related.map((item) => (
               <Link
-                key={item.id}
-                href={item.route || `/products/${item.slug || toSlug(item.name)}`}
+                key={item.item_code}
+                href={item.route || `/products/${item.slug || toSlug(item.item_name)}`}
                 className="group overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition hover:-translate-y-1 hover:border-white/20"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={item.image || "/placeholder.png"}
-                  alt={item.name}
+                  src={item.image || "/images/placeholder.png"}
+                  alt={item.item_name}
                   className="h-52 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
                 />
                 <div className="p-4">
-                  <h3 className="line-clamp-2 font-semibold text-white">{item.name}</h3>
+                  <h3 className="line-clamp-2 font-semibold text-white">
+                    {item.item_name}
+                  </h3>
                   <div className="mt-2 font-semibold text-vu-red">
                     {item.price != null ? `Rs ${formatPKR(item.price)}` : "Price on request"}
                   </div>
