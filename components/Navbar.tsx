@@ -6,10 +6,9 @@ import CartDrawer from "./CartDrawer";
 import CategoryBar from "./CategoryBar";
 import { useState } from "react";
 import { Menu, X, Search } from "lucide-react";
+import { Instagram, Facebook } from "lucide-react";
 
 const navLinks = [
-  { href: "/", label: "Home" },
-  { href: "/products", label: "Products" },
   { href: "/contact", label: "Contact" },
 ];
 
@@ -19,6 +18,8 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-neutral-200 bg-[#fefefe] text-black shadow-sm">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
+        
+        {/* LOGO */}
         <Link href="/" onClick={() => setOpen(false)}>
           <Image
             src="/images/logo.png"
@@ -30,7 +31,10 @@ export default function Navbar() {
           />
         </Link>
 
-        <nav className="hidden items-center gap-3 md:flex">
+        {/* DESKTOP NAV */}
+        <nav className="hidden items-center gap-4 md:flex">
+
+          {/* SEARCH */}
           <div className="flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-3 py-2">
             <Search size={16} className="mr-2 text-neutral-500" />
             <input
@@ -40,6 +44,7 @@ export default function Navbar() {
             />
           </div>
 
+          {/* CONTACT BUTTON */}
           <div className="flex items-center rounded-full border border-neutral-200 bg-[#fefefe] p-1 shadow-sm">
             {navLinks.map((item) => (
               <Link
@@ -52,18 +57,32 @@ export default function Navbar() {
             ))}
           </div>
 
-          <div className="ml-2 flex items-center gap-2">
+          {/* FOLLOW US */}
+          <div className="flex items-center gap-2 ml-2 text-sm text-neutral-600">
+            <span className="hidden lg:block">Follow us:</span>
+
+            <Instagram className="h-5 w-5 cursor-pointer hover:text-[#a30105]" />
+            <Facebook className="h-5 w-5 cursor-pointer hover:text-[#a30105]" />
+
+            {/* Snapchat placeholder */}
+            <span className="text-xs font-semibold border px-2 py-1 rounded-md hover:bg-neutral-100 cursor-pointer">
+              Snap
+            </span>
+          </div>
+
+          {/* CART */}
+          <div className="ml-2 flex items-center">
             <CartDrawer />
           </div>
         </nav>
 
+        {/* MOBILE */}
         <div className="flex items-center gap-2 md:hidden">
           <CartDrawer />
 
           <button
             onClick={() => setOpen((v) => !v)}
             className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-neutral-200 bg-[#fefefe] text-black shadow-sm transition hover:bg-neutral-100"
-            aria-label="Open menu"
           >
             {open ? <X size={20} /> : <Menu size={20} />}
           </button>
@@ -72,6 +91,7 @@ export default function Navbar() {
 
       <CategoryBar />
 
+      {/* MOBILE MENU */}
       {open && (
         <div className="border-t border-neutral-200 bg-[#fefefe] px-4 py-4 shadow-lg md:hidden">
           <div className="mb-4 flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-3 py-2">
@@ -83,18 +103,13 @@ export default function Navbar() {
             />
           </div>
 
-          <div className="space-y-2">
-            {navLinks.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className="block rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium text-neutral-800 transition hover:bg-white"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
+          <Link
+            href="/contact"
+            onClick={() => setOpen(false)}
+            className="block rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium text-neutral-800"
+          >
+            Contact
+          </Link>
         </div>
       )}
     </header>
