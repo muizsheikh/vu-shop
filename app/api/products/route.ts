@@ -50,7 +50,7 @@ type ERPItem = {
   item_group?: string | null;
   brand?: string | null;
   description?: string | null;
-  website_category?: string | null;
+  custom_website_category?: string | null;
   disabled?: 0 | 1;
   vu_show_in_website?: 0 | 1;
 };
@@ -251,7 +251,7 @@ export async function GET(req: Request) {
     }
     if (brand) filters.push(["brand", "=", brand]);
     if (group) filters.push(["item_group", "=", group]);
-    if (category) filters.push(["website_category", "=", category]);
+    if (category) filters.push(["custom_website_category", "=", category]);
 
     const items = await erpResourceList<ERPItem>("Item", {
       fields: [
@@ -262,7 +262,7 @@ export async function GET(req: Request) {
         "item_group",
         "brand",
         "description",
-        "website_category",
+        "custom_website_category",
         "disabled",
         "vu_show_in_website",
       ],
@@ -354,7 +354,7 @@ export async function GET(req: Request) {
         stock,
         brand: sanitizeString(it.brand),
         item_group: sanitizeString(it.item_group),
-        category: sanitizeString(it.website_category),
+        category: sanitizeString(it.custom_website_category),
         slug,
         route: `/products/${slug}`,
         in_stock: stock > 0,
