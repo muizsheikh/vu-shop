@@ -49,6 +49,20 @@ function SidebarSection({
   );
 }
 
+function getPageNumbers(currentPage: number, totalPages: number) {
+  if (totalPages <= 1) return [];
+
+  const pages = new Set<number>();
+  pages.add(1);
+  pages.add(totalPages);
+
+  for (let i = currentPage - 1; i <= currentPage + 1; i += 1) {
+    if (i > 1 && i < totalPages) pages.add(i);
+  }
+
+  return Array.from(pages).sort((a, b) => a - b);
+}
+
 function ProductsInner() {
   const params = useSearchParams();
   const router = useRouter();
@@ -113,7 +127,6 @@ function ProductsInner() {
   const GROUPS = ["Devices", "Coils", "E-Liquids", "Disposables", "Tanks"];
 
   const activeBrand = brand.toLowerCase();
-
   const rawProducts: Product[] = Array.isArray(data?.products) ? data.products : [];
 
   const sorted = useMemo(() => {
@@ -127,14 +140,18 @@ function ProductsInner() {
 
     if (sort === "price_asc") {
       products.sort((a, b) => {
-        const aPrice = typeof a.price === "number" ? a.price : Number.POSITIVE_INFINITY;
-        const bPrice = typeof b.price === "number" ? b.price : Number.POSITIVE_INFINITY;
+        const aPrice =
+          typeof a.price === "number" ? a.price : Number.POSITIVE_INFINITY;
+        const bPrice =
+          typeof b.price === "number" ? b.price : Number.POSITIVE_INFINITY;
         return aPrice - bPrice;
       });
     } else if (sort === "price_desc") {
       products.sort((a, b) => {
-        const aPrice = typeof a.price === "number" ? a.price : Number.NEGATIVE_INFINITY;
-        const bPrice = typeof b.price === "number" ? b.price : Number.NEGATIVE_INFINITY;
+        const aPrice =
+          typeof a.price === "number" ? a.price : Number.NEGATIVE_INFINITY;
+        const bPrice =
+          typeof b.price === "number" ? b.price : Number.NEGATIVE_INFINITY;
         return bPrice - aPrice;
       });
     }
@@ -158,7 +175,37 @@ function ProductsInner() {
     return [...known, ...extra];
   }, [sorted]);
 
-  const updateFilters = (updates: Record<string, string | null | undefined>) => {
+  const currentPage = Math.max(
+    1,
+    Number(
+      data?.page ??
+        data?.current_page ??
+        data?.currentPage ??
+        data?.pagination?.page ??
+        data?.pagination?.current_page ??
+        data?.pagination?.currentPage ??
+        page ??
+        1
+    ) || 1
+  );
+
+  const totalPagesRaw = Number(
+    data?.total_pages ??
+      data?.totalPages ??
+      data?.pages ??
+      data?.pagination?.total_pages ??
+      data?.pagination?.totalPages ??
+      data?.pagination?.pages ??
+      1
+  );
+
+  const totalPages = Math.max(1, totalPagesRaw || 1);
+  const pageNumbers = getPageNumbers(currentPage, totalPages);
+
+  const updateFilters = (
+    updates: Record<string, string | null | undefined>,
+    options?: { preservePage?: boolean }
+  ) => {
     const next = new URLSearchParams(params.toString());
 
     Object.entries(updates).forEach(([key, value]) => {
@@ -169,7 +216,23 @@ function ProductsInner() {
       }
     });
 
-    next.delete("page");
+    if (!options?.preservePage) {
+      next.delete("page");
+    }
+
+    const qs = next.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  };
+
+  const goToPage = (nextPage: number) => {
+    const safePage = Math.min(Math.max(1, nextPage), totalPages);
+
+    const next = new URLSearchParams(params.toString());
+    if (safePage <= 1) {
+      next.delete("page");
+    } else {
+      next.set("page", String(safePage));
+    }
 
     const qs = next.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
@@ -483,11 +546,69 @@ function ProductsInner() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-              {sorted.map((p) => (
-                <ProductCard key={p.id} p={p} />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
+                {sorted.map((p) => (
+                  <ProductCard key={p.id} p={p} />
+                ))}
+              </div>
+
+              {totalPages > 1 ? (
+                <div className="mt-8 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:p-5">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div className="text-sm text-neutral-500">
+                      Page <span className="font-semibold text-neutral-900">{currentPage}</span> of{" "}
+                      <span className="font-semibold text-neutral-900">{totalPages}</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage <= 1}
+                        className="inline-flex min-h-[42px] items-center justify-center rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Prev
+                      </button>
+
+                      {pageNumbers.map((pageNumber, index) => {
+                        const prev = pageNumbers[index - 1];
+                        const showEllipsis = typeof prev === "number" && pageNumber - prev > 1;
+
+                        return (
+                          <div key={pageNumber} className="flex items-center gap-2">
+                            {showEllipsis ? (
+                              <span className="px-1 text-sm text-neutral-400">…</span>
+                            ) : null}
+
+                            <button
+                              type="button"
+                              onClick={() => goToPage(pageNumber)}
+                              className={`inline-flex h-[42px] min-w-[42px] items-center justify-center rounded-2xl px-3 text-sm font-semibold transition ${
+                                currentPage === pageNumber
+                                  ? "bg-vu-red text-white shadow-sm"
+                                  : "border border-neutral-200 bg-white text-neutral-800 hover:bg-neutral-50"
+                              }`}
+                            >
+                              {pageNumber}
+                            </button>
+                          </div>
+                        );
+                      })}
+
+                      <button
+                        type="button"
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage >= totalPages}
+                        className="inline-flex min-h-[42px] items-center justify-center rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       </div>
