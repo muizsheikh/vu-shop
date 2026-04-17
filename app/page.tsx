@@ -174,13 +174,10 @@ function TrendingCollageSection() {
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
-          setRevealed(true);
-          observer.disconnect();
-        }
+        setRevealed(entry.isIntersecting);
       },
       {
-        threshold: 0.28,
+        threshold: 0.3,
         rootMargin: "0px 0px -8% 0px",
       }
     );
@@ -265,11 +262,31 @@ function TrendingCollageSection() {
         <div className="relative mt-10 h-[560px] w-full overflow-hidden rounded-[28px] bg-[#f8f8f8] sm:h-[620px] lg:h-[760px]">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(163,1,5,0.04),transparent_42%)]" />
 
+          {collageItems.map((item, index) => (
+            <div
+              key={item.alt + index}
+              className={`absolute overflow-hidden border border-white/70 bg-white shadow-[0_18px_45px_rgba(0,0,0,0.12)] transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${item.posClass} ${
+                revealed
+                  ? "translate-x-0 translate-y-0 rotate-0 scale-100 opacity-100"
+                  : `${item.hiddenClass} opacity-0`
+              }`}
+              style={{ transitionDelay: item.delay, zIndex: 20 }}
+            >
+              <Image
+                src={item.src}
+                alt={item.alt}
+                fill
+                className="object-cover"
+                sizes="(max-width: 1024px) 50vw, 33vw"
+              />
+            </div>
+          ))}
+
           <div
             className={`absolute inset-0 flex items-center justify-center px-4 transition-all duration-[1100ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
               revealed ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0"
             }`}
-            style={{ transitionDelay: "120ms" }}
+            style={{ transitionDelay: "120ms", zIndex: 40 }}
           >
             <div className="max-w-[780px] text-center">
               <div
@@ -282,26 +299,6 @@ function TrendingCollageSection() {
               </div>
             </div>
           </div>
-
-          {collageItems.map((item, index) => (
-            <div
-              key={item.alt + index}
-              className={`absolute overflow-hidden border border-white/70 bg-white shadow-[0_18px_45px_rgba(0,0,0,0.12)] transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${item.posClass} ${
-                revealed
-                  ? "translate-x-0 translate-y-0 rotate-0 scale-100 opacity-100"
-                  : `${item.hiddenClass} opacity-0`
-              }`}
-              style={{ transitionDelay: item.delay }}
-            >
-              <Image
-                src={item.src}
-                alt={item.alt}
-                fill
-                className="object-cover"
-                sizes="(max-width: 1024px) 50vw, 33vw"
-              />
-            </div>
-          ))}
         </div>
       </div>
     </section>
