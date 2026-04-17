@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
@@ -33,20 +33,49 @@ function FilterChip({
   );
 }
 
+function SidebarSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border-t border-neutral-200 pt-5 first:border-t-0 first:pt-0">
+      <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-neutral-900">
+        {title}
+      </h3>
+      <div className="mt-3">{children}</div>
+    </div>
+  );
+}
+
 function ProductsInner() {
   const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
 
   const brand = params.get("brand") || "";
   const group = params.get("group") || "";
   const category = params.get("category") || "";
   const q = params.get("q") || "";
   const page = params.get("page") || "1";
+  const minPrice = params.get("min_price") || "";
+  const maxPrice = params.get("max_price") || "";
+  const inStockOnly = params.get("in_stock") === "1";
+
+  const [minInput, setMinInput] = useState(minPrice);
+  const [maxInput, setMaxInput] = useState(maxPrice);
 
   const apiUrl = `/api/products?brand=${encodeURIComponent(
     brand
   )}&group=${encodeURIComponent(group)}&category=${encodeURIComponent(
     category
-  )}&q=${encodeURIComponent(q)}&page=${encodeURIComponent(page)}`;
+  )}&q=${encodeURIComponent(q)}&page=${encodeURIComponent(
+    page
+  )}&min_price=${encodeURIComponent(minPrice)}&max_price=${encodeURIComponent(
+    maxPrice
+  )}`;
 
   const { data, error, isLoading } = useSWR(apiUrl, fetcher);
 
@@ -73,7 +102,55 @@ function ProductsInner() {
     "WOMO",
   ];
 
+  const GROUPS = ["Devices", "Coils", "E-Liquids", "Disposables", "Tanks"];
+
   const activeBrand = brand.toLowerCase();
+
+  const updateFilters = (updates: Record<string, string | null | undefined>) => {
+    const next = new URLSearchParams(params.toString());
+
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value == null || value === "") {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+    });
+
+    next.delete("page");
+
+    const qs = next.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  };
+
+  const toggleBrand = (value: string) => {
+    updateFilters({
+      brand: brand === value ? null : value,
+    });
+  };
+
+  const toggleGroup = (value: string) => {
+    updateFilters({
+      group: group === value ? null : value,
+    });
+  };
+
+  const toggleInStock = () => {
+    updateFilters({
+      in_stock: inStockOnly ? null : "1",
+    });
+  };
+
+  const applyPriceFilter = () => {
+    updateFilters({
+      min_price: minInput.trim() || null,
+      max_price: maxInput.trim() || null,
+    });
+  };
+
+  const clearAll = () => {
+    router.push("/products");
+  };
 
   if (error) {
     return (
@@ -99,11 +176,11 @@ function ProductsInner() {
           <div className="mt-3 h-5 w-80 animate-pulse rounded-xl bg-neutral-100" />
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+        <div className="grid gap-6 lg:grid-cols-[290px_1fr]">
           <div className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.05)]">
             <div className="mb-4 h-6 w-24 animate-pulse rounded-xl bg-neutral-200" />
             <div className="space-y-3">
-              {Array.from({ length: 8 }).map((_, i) => (
+              {Array.from({ length: 10 }).map((_, i) => (
                 <div
                   key={i}
                   className="h-10 animate-pulse rounded-2xl bg-neutral-100"
@@ -133,7 +210,13 @@ function ProductsInner() {
     );
   }
 
-  const products: Product[] = Array.isArray(data.products) ? data.products : [];
+  let products: Product[] = Array.isArray(data.products) ? data.products : [];
+
+  if (inStockOnly) {
+    products = products.filter(
+      (p) => !(p.in_stock === false || p.stock_qty === 0)
+    );
+  }
 
   const sorted = [...products].sort((a, b) => {
     const ai = a.in_stock === false || a.stock_qty === 0 ? 1 : 0;
@@ -147,6 +230,28 @@ function ProductsInner() {
     return aName.localeCompare(bName);
   });
 
+  const dynamicBrands = useMemo(() => {
+    const set = new Set(
+      sorted
+        .map((p) => (p.brand || "").trim())
+        .filter(Boolean)
+    );
+
+    return BRANDS.filter((b) => set.has(b));
+  }, [sorted]);
+
+  const dynamicGroups = useMemo(() => {
+    const set = new Set(
+      sorted
+        .map((p) => (p.item_group || "").trim())
+        .filter(Boolean)
+    );
+
+    const known = GROUPS.filter((g) => set.has(g));
+    const extra = Array.from(set).filter((g) => !GROUPS.includes(g));
+    return [...known, ...extra];
+  }, [sorted]);
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-8 md:px-6 md:py-10">
       <div className="mb-8">
@@ -155,62 +260,149 @@ function ProductsInner() {
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-600 md:text-base">
           Explore premium Vape Ustad products with a clean shopping experience,
-          clear pricing, and fast browsing by brand.
+          clear pricing, and fast browsing by filters.
         </p>
 
-        {(brand || group || category || q) && (
+        {(brand || group || category || q || minPrice || maxPrice || inStockOnly) && (
           <div className="mt-4 flex flex-wrap gap-2">
             {brand ? <FilterChip label="Brand" value={brand} /> : null}
             {group ? <FilterChip label="Group" value={group} /> : null}
             {category ? <FilterChip label="Category" value={category} /> : null}
             {q ? <FilterChip label="Search" value={q} /> : null}
+            {minPrice ? <FilterChip label="Min" value={minPrice} /> : null}
+            {maxPrice ? <FilterChip label="Max" value={maxPrice} /> : null}
+            {inStockOnly ? <FilterChip label="Stock" value="In Stock" /> : null}
 
-            <Link
-              href="/products"
+            <button
+              type="button"
+              onClick={clearAll}
               className="inline-flex items-center rounded-full border border-neutral-300 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-700 transition hover:bg-neutral-50"
             >
               Clear Filters
-            </Link>
+            </button>
           </div>
         )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[260px_1fr] lg:items-start">
+      <div className="grid gap-6 lg:grid-cols-[290px_1fr] lg:items-start">
         <aside className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.05)] lg:sticky lg:top-24">
-          <div className="mb-5">
-            <h2 className="text-lg font-bold text-neutral-950">Brands</h2>
-            <p className="mt-1 text-sm text-neutral-500">
-              Browse products by your preferred brand.
-            </p>
+          <div className="mb-6 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-neutral-950">Filters</h2>
+              <p className="mt-1 text-sm text-neutral-500">
+                Narrow down your product search.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={clearAll}
+              className="text-xs font-semibold uppercase tracking-[0.14em] text-[#a30105] transition hover:opacity-80"
+            >
+              Clear all
+            </button>
           </div>
 
-          <div className="flex flex-col gap-2">
-            {BRANDS.map((b) => {
-              const isActive = activeBrand === b.toLowerCase();
-
-              return (
-                <Link
-                  key={b}
-                  href={`/products?brand=${encodeURIComponent(b)}`}
-                  className={`inline-flex min-h-[42px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                    isActive
-                      ? "bg-vu-red text-white shadow-sm"
-                      : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
-                  }`}
-                >
-                  {b}
-                </Link>
-              );
-            })}
-
-            {brand && (
-              <Link
-                href="/products"
-                className="mt-2 inline-flex min-h-[42px] items-center justify-center rounded-2xl border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-50"
+          <div className="space-y-5">
+            <SidebarSection title="Stock">
+              <button
+                type="button"
+                onClick={toggleInStock}
+                className={`inline-flex min-h-[42px] w-full items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
+                  inStockOnly
+                    ? "bg-vu-red text-white shadow-sm"
+                    : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
+                }`}
               >
-                Clear Brand
-              </Link>
-            )}
+                In Stock Only
+              </button>
+            </SidebarSection>
+
+            <SidebarSection title="Groups">
+              <div className="flex flex-col gap-2">
+                {dynamicGroups.length ? (
+                  dynamicGroups.map((g) => {
+                    const isActive = group === g;
+
+                    return (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => toggleGroup(g)}
+                        className={`inline-flex min-h-[42px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
+                          isActive
+                            ? "bg-vu-red text-white shadow-sm"
+                            : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
+                        }`}
+                      >
+                        {g}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="text-sm text-neutral-500">
+                    No groups available for current selection.
+                  </div>
+                )}
+              </div>
+            </SidebarSection>
+
+            <SidebarSection title="Brands">
+              <div className="flex flex-col gap-2">
+                {(dynamicBrands.length ? dynamicBrands : BRANDS).map((b) => {
+                  const isActive = activeBrand === b.toLowerCase();
+
+                  return (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => toggleBrand(b)}
+                      className={`inline-flex min-h-[42px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
+                        isActive
+                          ? "bg-vu-red text-white shadow-sm"
+                          : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
+                      }`}
+                    >
+                      {b}
+                    </button>
+                  );
+                })}
+              </div>
+            </SidebarSection>
+
+            <SidebarSection title="Price Range">
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    value={minInput}
+                    onChange={(e) => setMinInput(e.target.value)}
+                    placeholder="Min"
+                    className="min-h-[44px] rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-900 outline-none transition focus:border-neutral-300 focus:bg-white"
+                  />
+
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    value={maxInput}
+                    onChange={(e) => setMaxInput(e.target.value)}
+                    placeholder="Max"
+                    className="min-h-[44px] rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm text-neutral-900 outline-none transition focus:border-neutral-300 focus:bg-white"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={applyPriceFilter}
+                  className="inline-flex min-h-[44px] w-full items-center justify-center rounded-2xl border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-50"
+                >
+                  Apply Price
+                </button>
+              </div>
+            </SidebarSection>
           </div>
         </aside>
 
@@ -239,16 +431,17 @@ function ProductsInner() {
                 No products found
               </h3>
               <p className="mt-2 text-sm leading-6 text-neutral-600">
-                Try changing the selected brand or clear the current filters to
-                explore more items.
+                Try changing filters or clear the current selection to explore
+                more items.
               </p>
 
-              <Link
-                href="/products"
+              <button
+                type="button"
+                onClick={clearAll}
                 className="mt-5 inline-flex min-h-[46px] items-center justify-center rounded-2xl bg-vu-red px-5 py-3 text-sm font-semibold text-white transition hover:opacity-95"
               >
                 View All Products
-              </Link>
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
