@@ -224,6 +224,31 @@ function matchesSearch(p: Product, q: string) {
   );
 }
 
+function normalizeForMatch(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchesCategory(p: Product, category: string) {
+  const needle = normalizeForMatch(category);
+  if (!needle) return true;
+
+  const haystacks = [
+    p.item_name,
+    p.item_code,
+    p.brand,
+    p.item_group,
+    p.description,
+    p.slug,
+  ].map((v) => normalizeForMatch(v));
+
+  return haystacks.some((h) => h.includes(needle));
+}
+
 /* ---------- GET ---------- */
 export async function GET(req: Request) {
   try {
@@ -232,6 +257,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const brand = sanitizeString(url.searchParams.get("brand"));
     const group = sanitizeString(url.searchParams.get("group"));
+    const category = sanitizeString(url.searchParams.get("category"));
     const q = sanitizeString(url.searchParams.get("q"));
     const minPrice = parsePositiveNumber(url.searchParams.get("min_price"));
     const maxPrice = parsePositiveNumber(url.searchParams.get("max_price"));
@@ -277,6 +303,7 @@ export async function GET(req: Request) {
             filters: {
               brand,
               group,
+              category,
               q,
               min_price: minPrice,
               max_price: maxPrice,
@@ -353,6 +380,10 @@ export async function GET(req: Request) {
       };
     });
 
+    if (category) {
+      products = products.filter((p) => matchesCategory(p, category));
+    }
+
     if (minPrice != null || maxPrice != null) {
       products = products.filter((p) => {
         if (p.price == null) return false;
@@ -387,6 +418,7 @@ export async function GET(req: Request) {
           filters: {
             brand,
             group,
+            category,
             q,
             min_price: minPrice,
             max_price: maxPrice,
