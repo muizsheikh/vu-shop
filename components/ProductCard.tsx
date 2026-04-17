@@ -8,7 +8,11 @@ type ProductCardInput = {
   description?: string | null;
   route?: string | null;
   slug?: string | null;
+
+  // FIX: dono support karo
   stock_qty?: number | null;
+  stock?: number | null;
+
   in_stock?: boolean;
   brand?: string | null;
   item_group?: string | null;
@@ -33,8 +37,13 @@ function stripHtml(html?: string | null) {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function getStockMeta(stockQty?: number | null, inStock?: boolean) {
-  const qty = Number(stockQty ?? 0);
+// ✅ FIXED FUNCTION
+function getStockMeta(
+  stockQty?: number | null,
+  stock?: number | null,
+  inStock?: boolean
+) {
+  const qty = Number(stockQty ?? stock ?? 0);
   const isOutOfStock = inStock === false || qty <= 0;
 
   if (isOutOfStock) {
@@ -42,6 +51,7 @@ function getStockMeta(stockQty?: number | null, inStock?: boolean) {
       label: "Out of Stock",
       className: "border-red-200 bg-red-50 text-red-700",
       showQty: false,
+      qty,
     };
   }
 
@@ -50,6 +60,7 @@ function getStockMeta(stockQty?: number | null, inStock?: boolean) {
       label: "Low Stock",
       className: "border-amber-200 bg-amber-50 text-amber-700",
       showQty: true,
+      qty,
     };
   }
 
@@ -57,16 +68,20 @@ function getStockMeta(stockQty?: number | null, inStock?: boolean) {
     label: "In Stock",
     className: "border-emerald-200 bg-emerald-50 text-emerald-700",
     showQty: true,
+    qty,
   };
 }
 
 export default function ProductCard({ p }: { p: ProductCardInput }) {
   const slug = p.slug || toSlug(p.name) || toSlug(p.id);
   const href = normalizeRoute(p.route) || `/products/${slug}`;
+
   const pricePKR =
     p.price != null ? new Intl.NumberFormat("en-PK").format(p.price) : null;
 
-  const stockMeta = getStockMeta(p.stock_qty, p.in_stock);
+  // ✅ FIXED CALL
+  const stockMeta = getStockMeta(p.stock_qty, p.stock, p.in_stock);
+
   const cleanDescription = stripHtml(p.description);
 
   return (
@@ -75,7 +90,6 @@ export default function ProductCard({ p }: { p: ProductCardInput }) {
       className="group block overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-[0_12px_35px_rgba(0,0,0,0.05)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(0,0,0,0.08)]"
     >
       <div className="relative overflow-hidden bg-neutral-50">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={p.image || "/images/placeholder.png"}
           alt={p.name}
@@ -130,10 +144,12 @@ export default function ProductCard({ p }: { p: ProductCardInput }) {
           </p>
         )}
 
-        {stockMeta.showQty && typeof p.stock_qty === "number" ? (
+        {stockMeta.showQty ? (
           <div className="mt-3 text-xs font-medium text-neutral-500">
             Stock:{" "}
-            <span className="font-semibold text-neutral-800">{p.stock_qty}</span>
+            <span className="font-semibold text-neutral-800">
+              {stockMeta.qty}
+            </span>
           </div>
         ) : (
           <div className="mt-3 text-xs font-medium text-red-600">
