@@ -1,16 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import ThemeSwitch from "./ThemeSwitch";
 import CartDrawer from "./CartDrawer";
 import { useState } from "react";
 import { Menu, X, Search } from "lucide-react";
-import { Cinzel } from "next/font/google";
-
-const cinzel = Cinzel({
-  subsets: ["latin"],
-  weight: ["700", "900"],
-});
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -24,25 +19,23 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-50 bg-white text-black border-b border-neutral-200 shadow-sm">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
-        
-        {/* Logo */}
-        <Link
-          href="/"
-          className={`group flex items-center ${cinzel.className}`}
-          onClick={() => setOpen(false)}
-        >
-          <span className="text-[1.7rem] font-extrabold leading-none tracking-[0.04em] md:text-[2.1rem]">
-            <span className="text-vu-red">VAPE</span>{" "}
-            <span className="text-black group-hover:text-neutral-700">
-              Ustad Pvt. Ltd.
-            </span>
-          </span>
+
+        {/* LOGO IMAGE */}
+        <Link href="/" onClick={() => setOpen(false)}>
+          <Image
+            src="/images/logo.png"
+            alt="Vape Ustad"
+            width={220}
+            height={60}
+            priority
+            className="h-auto w-[160px] md:w-[200px] object-contain"
+          />
         </Link>
 
         {/* Desktop Nav */}
         <nav className="hidden items-center gap-3 md:flex">
 
-          {/* Search Bar */}
+          {/* Search */}
           <div className="flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-3 py-2">
             <Search size={16} className="text-neutral-500 mr-2" />
             <input
@@ -89,8 +82,8 @@ export default function Navbar() {
       {/* Mobile Drawer */}
       {open && (
         <div className="border-t border-neutral-200 bg-white px-4 py-4 shadow-lg md:hidden">
-          
-          {/* Search Mobile */}
+
+          {/* Search */}
           <div className="mb-4 flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-3 py-2">
             <Search size={16} className="text-neutral-500 mr-2" />
             <input
