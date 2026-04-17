@@ -163,6 +163,95 @@ function HeroSlider() {
   );
 }
 
+/** ---------------- New Trending Collage ---------------- **/
+function TrendingCollageSection() {
+  const collageItems = [
+    {
+      src: "/images/banners/banner1.jpg",
+      alt: "Trending showcase 1",
+      className:
+        "left-[2%] top-[16%] h-[150px] w-[120px] rounded-[24px] sm:left-[4%] sm:top-[18%] sm:h-[190px] sm:w-[150px] lg:h-[220px] lg:w-[180px]",
+    },
+    {
+      src: "/images/banners/banner2.jpg",
+      alt: "Trending showcase 2",
+      className:
+        "left-[20%] top-[0%] h-[130px] w-[180px] rounded-[24px] sm:left-[22%] sm:h-[170px] sm:w-[250px] lg:h-[210px] lg:w-[320px]",
+    },
+    {
+      src: "/images/banners/banner3.jpg",
+      alt: "Trending showcase 3",
+      className:
+        "right-[6%] top-[0%] h-[150px] w-[200px] rounded-[24px] sm:right-[8%] sm:h-[200px] sm:w-[280px] lg:h-[260px] lg:w-[360px]",
+    },
+    {
+      src: "/images/banners/banner4.jpg",
+      alt: "Trending showcase 4",
+      className:
+        "left-[8%] bottom-[12%] h-[170px] w-[220px] rounded-[24px] sm:left-[12%] sm:h-[220px] sm:w-[300px] lg:h-[280px] lg:w-[380px]",
+    },
+    {
+      src: "/images/banners/banner5.jpg",
+      alt: "Trending showcase 5",
+      className:
+        "right-[20%] bottom-[10%] h-[150px] w-[210px] rounded-[24px] sm:right-[22%] sm:h-[190px] sm:w-[260px] lg:h-[240px] lg:w-[330px]",
+    },
+    {
+      src: "/images/banners/banner2.jpg",
+      alt: "Trending showcase 6",
+      className:
+        "right-[0%] bottom-[18%] h-[150px] w-[130px] rounded-[24px] sm:right-[2%] sm:h-[190px] sm:w-[170px] lg:h-[230px] lg:w-[220px]",
+    },
+  ];
+
+  return (
+    <section className="pt-6 md:pt-10">
+      <div className="overflow-hidden rounded-[32px] border border-neutral-200 bg-white px-4 py-8 shadow-[0_20px_60px_rgba(0,0,0,0.05)] sm:px-6 md:px-8 md:py-10 lg:px-10">
+        <div className="mx-auto max-w-3xl text-center">
+          <span className="inline-flex rounded-full border border-neutral-200 bg-neutral-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-700">
+            New Trending
+          </span>
+          <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-neutral-950 md:text-5xl">
+            Fresh drops with a premium editorial feel
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-neutral-600 md:text-base">
+            A curated visual highlight section designed to showcase new
+            arrivals, featured drops, and standout collections in a cleaner,
+            more premium way.
+          </p>
+        </div>
+
+        <div className="relative mt-10 h-[560px] w-full overflow-hidden rounded-[28px] bg-[#f8f8f8] sm:h-[620px] lg:h-[760px]">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(163,1,5,0.04),transparent_42%)]" />
+
+          {collageItems.map((item, index) => (
+            <div
+              key={item.alt + index}
+              className={`absolute overflow-hidden border border-white/70 bg-white shadow-[0_18px_45px_rgba(0,0,0,0.12)] ${item.className}`}
+            >
+              <Image
+                src={item.src}
+                alt={item.alt}
+                fill
+                className="object-cover"
+                sizes="(max-width: 1024px) 50vw, 33vw"
+              />
+            </div>
+          ))}
+
+          <div className="absolute inset-0 flex items-center justify-center px-4">
+            <div className="max-w-[780px] text-center">
+              <div className="text-[34px] font-light uppercase tracking-[0.08em] text-[#a30105] sm:text-[54px] md:text-[72px] lg:text-[88px]">
+                NEW <span className="font-extrabold">TRENDING</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /** ---------------- HomeInner (uses useSearchParams) ---------------- **/
 function HomeInner() {
   const { data, isLoading } = useSWR("/api/products", fetcher);
@@ -205,6 +294,8 @@ function HomeInner() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-16 px-4 py-8 md:px-6 md:space-y-20">
+      <TrendingCollageSection />
+
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           {
