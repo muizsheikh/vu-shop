@@ -14,6 +14,7 @@ type Product = {
   in_stock?: boolean;
   item_group?: string | null;
   brand?: string | null;
+  category?: string | null;
 };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -175,6 +176,13 @@ function ProductsInner() {
     return [...known, ...extra];
   }, [sorted]);
 
+  const dynamicCategories = useMemo(() => {
+    const set = new Set(
+      sorted.map((p) => (p.category || "").trim()).filter(Boolean)
+    );
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [sorted]);
+
   const currentPage = Math.max(
     1,
     Number(
@@ -247,6 +255,12 @@ function ProductsInner() {
   const toggleGroup = (value: string) => {
     updateFilters({
       group: group === value ? null : value,
+    });
+  };
+
+  const toggleCategory = (value: string) => {
+    updateFilters({
+      category: category === value ? null : value,
     });
   };
 
@@ -404,6 +418,35 @@ function ProductsInner() {
               </button>
             </SidebarSection>
 
+            <SidebarSection title="Categories">
+              <div className="flex flex-col gap-2">
+                {dynamicCategories.length ? (
+                  dynamicCategories.map((c) => {
+                    const isActive = category === c;
+
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => toggleCategory(c)}
+                        className={`inline-flex min-h-[42px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
+                          isActive
+                            ? "bg-vu-red text-white shadow-sm"
+                            : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="text-sm text-neutral-500">
+                    No categories available for current selection.
+                  </div>
+                )}
+              </div>
+            </SidebarSection>
+
             <SidebarSection title="Groups">
               <div className="flex flex-col gap-2">
                 {dynamicGroups.length ? (
@@ -557,8 +600,14 @@ function ProductsInner() {
                 <div className="mt-8 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:p-5">
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div className="text-sm text-neutral-500">
-                      Page <span className="font-semibold text-neutral-900">{currentPage}</span> of{" "}
-                      <span className="font-semibold text-neutral-900">{totalPages}</span>
+                      Page{" "}
+                      <span className="font-semibold text-neutral-900">
+                        {currentPage}
+                      </span>{" "}
+                      of{" "}
+                      <span className="font-semibold text-neutral-900">
+                        {totalPages}
+                      </span>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
@@ -573,12 +622,15 @@ function ProductsInner() {
 
                       {pageNumbers.map((pageNumber, index) => {
                         const prev = pageNumbers[index - 1];
-                        const showEllipsis = typeof prev === "number" && pageNumber - prev > 1;
+                        const showEllipsis =
+                          typeof prev === "number" && pageNumber - prev > 1;
 
                         return (
                           <div key={pageNumber} className="flex items-center gap-2">
                             {showEllipsis ? (
-                              <span className="px-1 text-sm text-neutral-400">…</span>
+                              <span className="px-1 text-sm text-neutral-400">
+                                …
+                              </span>
                             ) : null}
 
                             <button
