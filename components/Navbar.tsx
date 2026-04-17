@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import ThemeSwitch from "./ThemeSwitch";
 import CartDrawer from "./CartDrawer";
 import CategoryBar from "./CategoryBar";
 import { useState } from "react";
@@ -55,7 +54,6 @@ export default function Navbar() {
 
           <div className="ml-2 flex items-center gap-2">
             <CartDrawer />
-            <ThemeSwitch />
           </div>
         </nav>
 
@@ -96,13 +94,6 @@ export default function Navbar() {
                 {item.label}
               </Link>
             ))}
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
-              Appearance
-            </div>
-            <ThemeSwitch />
           </div>
         </div>
       )}
