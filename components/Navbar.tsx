@@ -4,22 +4,45 @@ import Link from "next/link";
 import Image from "next/image";
 import CartDrawer from "./CartDrawer";
 import CategoryBar from "./CategoryBar";
-import { useState } from "react";
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Menu, X, Search } from "lucide-react";
 import { Instagram, Facebook } from "lucide-react";
 
-const navLinks = [
-  { href: "/contact", label: "Contact" },
-];
+const navLinks = [{ href: "/contact", label: "Contact" }];
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
+  const [desktopQuery, setDesktopQuery] = useState("");
+  const [mobileQuery, setMobileQuery] = useState("");
+  const router = useRouter();
+
+  const submitSearch = (rawQuery: string, closeMobile = false) => {
+    const query = rawQuery.trim();
+
+    if (!query) {
+      router.push("/products");
+      if (closeMobile) setOpen(false);
+      return;
+    }
+
+    router.push(`/products?q=${encodeURIComponent(query)}`);
+    if (closeMobile) setOpen(false);
+  };
+
+  const onDesktopSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    submitSearch(desktopQuery, false);
+  };
+
+  const onMobileSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    submitSearch(mobileQuery, true);
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-neutral-200 bg-[#fefefe] text-black shadow-sm">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
-        
-        {/* LOGO */}
         <Link href="/" onClick={() => setOpen(false)}>
           <Image
             src="/images/logo.png"
@@ -31,20 +54,28 @@ export default function Navbar() {
           />
         </Link>
 
-        {/* DESKTOP NAV */}
         <nav className="hidden items-center gap-4 md:flex">
-
-          {/* SEARCH */}
-          <div className="flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-3 py-2">
+          <form
+            onSubmit={onDesktopSubmit}
+            className="flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-3 py-2"
+          >
             <Search size={16} className="mr-2 text-neutral-500" />
             <input
               type="text"
+              value={desktopQuery}
+              onChange={(e) => setDesktopQuery(e.target.value)}
               placeholder="Search products..."
               className="w-40 bg-transparent text-sm outline-none placeholder:text-neutral-500"
             />
-          </div>
+            <button
+              type="submit"
+              aria-label="Search products"
+              className="ml-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-neutral-500 transition hover:bg-white hover:text-black"
+            >
+              <Search size={15} />
+            </button>
+          </form>
 
-          {/* CONTACT BUTTON */}
           <div className="flex items-center rounded-full border border-neutral-200 bg-[#fefefe] p-1 shadow-sm">
             {navLinks.map((item) => (
               <Link
@@ -57,26 +88,22 @@ export default function Navbar() {
             ))}
           </div>
 
-          {/* FOLLOW US */}
-          <div className="flex items-center gap-2 ml-2 text-sm text-neutral-600">
+          <div className="ml-2 flex items-center gap-2 text-sm text-neutral-600">
             <span className="hidden lg:block">Follow us:</span>
 
             <Instagram className="h-5 w-5 cursor-pointer hover:text-[#a30105]" />
             <Facebook className="h-5 w-5 cursor-pointer hover:text-[#a30105]" />
 
-            {/* Snapchat placeholder */}
-            <span className="text-xs font-semibold border px-2 py-1 rounded-md hover:bg-neutral-100 cursor-pointer">
+            <span className="cursor-pointer rounded-md border px-2 py-1 text-xs font-semibold hover:bg-neutral-100">
               Snap
             </span>
           </div>
 
-          {/* CART */}
           <div className="ml-2 flex items-center">
             <CartDrawer />
           </div>
         </nav>
 
-        {/* MOBILE */}
         <div className="flex items-center gap-2 md:hidden">
           <CartDrawer />
 
@@ -91,17 +118,28 @@ export default function Navbar() {
 
       <CategoryBar />
 
-      {/* MOBILE MENU */}
       {open && (
         <div className="border-t border-neutral-200 bg-[#fefefe] px-4 py-4 shadow-lg md:hidden">
-          <div className="mb-4 flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-3 py-2">
+          <form
+            onSubmit={onMobileSubmit}
+            className="mb-4 flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-3 py-2"
+          >
             <Search size={16} className="mr-2 text-neutral-500" />
             <input
               type="text"
+              value={mobileQuery}
+              onChange={(e) => setMobileQuery(e.target.value)}
               placeholder="Search products..."
               className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-500"
             />
-          </div>
+            <button
+              type="submit"
+              aria-label="Search products"
+              className="ml-2 inline-flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition hover:bg-white hover:text-black"
+            >
+              <Search size={15} />
+            </button>
+          </form>
 
           <Link
             href="/contact"

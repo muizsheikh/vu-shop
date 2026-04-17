@@ -8,7 +8,7 @@ import ProductCard from "@/components/ProductCard";
 
 type Product = {
   id: string;
-  name: string;
+  name?: string | null;
   image: string | null;
   price: number | null;
   stock_qty?: number | null;
@@ -33,20 +33,20 @@ function FilterChip({
   );
 }
 
-/** -------------------- Inner (Suspense) -------------------- **/
 function ProductsInner() {
   const params = useSearchParams();
 
   const brand = params.get("brand") || "";
   const group = params.get("group") || "";
+  const category = params.get("category") || "";
   const q = params.get("q") || "";
   const page = params.get("page") || "1";
 
   const apiUrl = `/api/products?brand=${encodeURIComponent(
     brand
-  )}&group=${encodeURIComponent(group)}&q=${encodeURIComponent(
-    q
-  )}&page=${encodeURIComponent(page)}`;
+  )}&group=${encodeURIComponent(group)}&category=${encodeURIComponent(
+    category
+  )}&q=${encodeURIComponent(q)}&page=${encodeURIComponent(page)}`;
 
   const { data, error, isLoading } = useSWR(apiUrl, fetcher);
 
@@ -133,13 +133,18 @@ function ProductsInner() {
     );
   }
 
-  const products: Product[] = data.products || [];
+  const products: Product[] = Array.isArray(data.products) ? data.products : [];
 
   const sorted = [...products].sort((a, b) => {
     const ai = a.in_stock === false || a.stock_qty === 0 ? 1 : 0;
     const bi = b.in_stock === false || b.stock_qty === 0 ? 1 : 0;
+
     if (ai !== bi) return ai - bi;
-    return a.name.localeCompare(b.name);
+
+    const aName = (a.name || "").trim();
+    const bName = (b.name || "").trim();
+
+    return aName.localeCompare(bName);
   });
 
   return (
@@ -153,10 +158,11 @@ function ProductsInner() {
           clear pricing, and fast browsing by brand.
         </p>
 
-        {(brand || group || q) && (
+        {(brand || group || category || q) && (
           <div className="mt-4 flex flex-wrap gap-2">
             {brand ? <FilterChip label="Brand" value={brand} /> : null}
             {group ? <FilterChip label="Group" value={group} /> : null}
+            {category ? <FilterChip label="Category" value={category} /> : null}
             {q ? <FilterChip label="Search" value={q} /> : null}
 
             <Link
@@ -257,7 +263,6 @@ function ProductsInner() {
   );
 }
 
-/** -------------------- Page (wrap inner in Suspense) -------------------- **/
 export default function ProductsPage() {
   return (
     <Suspense
