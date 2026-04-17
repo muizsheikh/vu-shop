@@ -60,102 +60,104 @@ function HeroSlider() {
 
   return (
     <section
-      className="relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] w-screen select-none"
+      className="relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] w-screen select-none bg-[#fefefe]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
       aria-label="Hero banner slider"
     >
-      <div className="relative h-[62vh] w-screen overflow-hidden md:h-[78vh]">
-        {slides.map((src, i) => (
-          <div
-            key={src + i}
-            className={`absolute inset-0 transition-opacity duration-700 ${
-              i === index ? "opacity-100" : "opacity-0"
-            }`}
-            aria-hidden={i !== index}
-          >
-            <Image
-              src={src}
-              alt={`Banner ${i + 1}`}
-              fill
-              className="object-cover"
-              priority={i === 0}
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/45 via-black/20 to-transparent" />
-          </div>
-        ))}
-
-        <div className="absolute inset-x-0 bottom-0 top-0 mx-auto flex w-full max-w-7xl items-center px-4 md:px-6">
-          <div className="max-w-2xl text-white">
-            <span className="inline-flex rounded-full border border-white/25 bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] backdrop-blur">
-              Vape Ustad
-            </span>
-
-            <h1 className="mt-5 text-4xl font-extrabold leading-tight tracking-tight md:text-6xl">
-              Premium vaping products with a clean shopping experience
-            </h1>
-
-            <p className="mt-4 max-w-xl text-sm leading-6 text-white/85 md:text-base">
-              Explore original products, trusted brands, and a smoother buying
-              journey designed for speed, clarity, and confidence.
-            </p>
-
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Link
-                href="/products"
-                className="inline-flex min-h-[50px] items-center justify-center rounded-2xl bg-vu-red px-6 py-3 text-sm font-semibold text-white transition hover:opacity-95"
+      <div className="mx-auto max-w-[1600px] px-0 md:px-4">
+        <div className="relative overflow-hidden rounded-none border-y border-neutral-200 bg-white md:rounded-[24px] md:border md:shadow-[0_18px_50px_rgba(0,0,0,0.06)]">
+          <div className="relative h-[420px] w-full sm:h-[500px] md:h-[560px] lg:h-[600px]">
+            {slides.map((src, i) => (
+              <div
+                key={src + i}
+                className={`absolute inset-0 transition-opacity duration-700 ${
+                  i === index ? "opacity-100" : "opacity-0"
+                }`}
+                aria-hidden={i !== index}
               >
-                Shop Now
-              </Link>
+                <Image
+                  src={src}
+                  alt={`Banner ${i + 1}`}
+                  fill
+                  className="object-cover"
+                  priority={i === 0}
+                />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/42 via-black/16 to-transparent" />
+              </div>
+            ))}
 
-              <Link
-                href="#collections"
-                className="inline-flex min-h-[50px] items-center justify-center rounded-2xl border border-white/25 bg-white/10 px-6 py-3 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/15"
-              >
-                View Collections
-              </Link>
+            <div className="absolute inset-0 mx-auto flex w-full max-w-7xl items-center px-5 sm:px-6 md:px-8">
+              <div className="max-w-[560px] text-white">
+                <span className="inline-flex rounded-full border border-white/30 bg-white/10 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.24em] backdrop-blur">
+                  Vape Ustad
+                </span>
+
+                <h1 className="mt-5 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl md:text-6xl">
+                  Premium vaping products with a clean shopping experience
+                </h1>
+
+                <p className="mt-4 max-w-[520px] text-sm leading-6 text-white/90 sm:text-[15px] md:text-base">
+                  Explore original products, trusted brands, and a smoother
+                  buying journey designed for speed, clarity, and confidence.
+                </p>
+
+                <div className="mt-7 flex flex-wrap gap-3">
+                  <Link
+                    href="/products"
+                    className="inline-flex min-h-[50px] items-center justify-center rounded-2xl bg-vu-red px-6 py-3 text-sm font-semibold text-white transition hover:opacity-95"
+                  >
+                    Shop Now
+                  </Link>
+
+                  <Link
+                    href="#collections"
+                    className="inline-flex min-h-[50px] items-center justify-center rounded-2xl border border-white/30 bg-white/10 px-6 py-3 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/15"
+                  >
+                    View Collections
+                  </Link>
+                </div>
+              </div>
             </div>
+
+            {len > 1 && (
+              <>
+                <button
+                  onClick={prev}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-2.5 text-white backdrop-blur transition hover:bg-white/25 md:left-5"
+                  aria-label="Previous slide"
+                >
+                  <ChevronLeft />
+                </button>
+
+                <button
+                  onClick={next}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-2.5 text-white backdrop-blur transition hover:bg-white/25 md:right-5"
+                  aria-label="Next slide"
+                >
+                  <ChevronRight />
+                </button>
+              </>
+            )}
+
+            {len > 1 && (
+              <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-2">
+                {slides.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setIndex(i)}
+                    aria-label={`Go to slide ${i + 1}`}
+                    className={`h-2.5 w-2.5 rounded-full transition ${
+                      i === index ? "bg-white" : "bg-white/55 hover:bg-white/85"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
-
-        {len > 1 && (
-          <>
-            <button
-              onClick={prev}
-              className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-2.5 text-white backdrop-blur transition hover:bg-white/25"
-              aria-label="Previous slide"
-            >
-              <ChevronLeft />
-            </button>
-
-            <button
-              onClick={next}
-              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-2.5 text-white backdrop-blur transition hover:bg-white/25"
-              aria-label="Next slide"
-            >
-              <ChevronRight />
-            </button>
-          </>
-        )}
-
-        {len > 1 && (
-          <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-2">
-            {slides.map((_, i) => (
-              <button
-                key={i}
-                onClick={() => setIndex(i)}
-                aria-label={`Go to slide ${i + 1}`}
-                className={`h-2.5 w-2.5 rounded-full transition ${
-                  i === index
-                    ? "bg-white"
-                    : "bg-white/50 hover:bg-white/80"
-                }`}
-              />
-            ))}
-          </div>
-        )}
       </div>
     </section>
   );
@@ -202,7 +204,7 @@ function HomeInner() {
   const featured = products.slice(0, 6);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-16 px-4 py-2 md:px-6 md:space-y-20">
+    <div className="mx-auto max-w-7xl space-y-16 px-4 py-8 md:px-6 md:space-y-20">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           {
