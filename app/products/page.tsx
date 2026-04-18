@@ -217,6 +217,17 @@ function ProductsInner() {
   const totalPages = Math.max(1, totalPagesRaw || 1);
   const pageNumbers = getPageNumbers(currentPage, totalPages);
 
+  const activeFilterCount = [
+    brand,
+    group,
+    category,
+    q,
+    minPrice,
+    maxPrice,
+    sort,
+    inStockOnly ? "1" : "",
+  ].filter(Boolean).length;
+
   const updateFilters = (
     updates: Record<string, string | null | undefined>,
     options?: { preservePage?: boolean }
@@ -554,16 +565,21 @@ function ProductsInner() {
         )}
       </div>
 
-      <div className="mb-5 flex items-center gap-3 lg:hidden">
+      <div className="mb-5 flex items-center justify-between gap-3 lg:hidden">
         <button
           type="button"
           onClick={() => setMobileFiltersOpen(true)}
           className="inline-flex min-h-[44px] items-center justify-center rounded-2xl border border-neutral-200 bg-white px-5 py-2 text-sm font-semibold text-neutral-900 shadow-[0_10px_30px_rgba(0,0,0,0.04)] transition hover:bg-neutral-50"
         >
           Filters
+          {activeFilterCount > 0 ? (
+            <span className="ml-2 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-[#a30105] px-1.5 text-[11px] font-bold text-white">
+              {activeFilterCount}
+            </span>
+          ) : null}
         </button>
 
-        <div className="text-sm text-neutral-500">
+        <div className="text-sm font-medium text-neutral-500">
           {sorted.length} Product{sorted.length === 1 ? "" : "s"}
         </div>
       </div>
@@ -605,34 +621,63 @@ function ProductsInner() {
         </aside>
 
         <div>
-          <div className="mb-5 flex flex-col gap-4 rounded-[28px] border border-neutral-200 bg-white p-5 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-neutral-950">
-                {sorted.length} Product{sorted.length === 1 ? "" : "s"} Found
-              </h2>
-              <p className="mt-1 text-sm text-neutral-500">
-                Sort products by price or keep the default ERP order.
-              </p>
-            </div>
+          <div className="sticky top-[84px] z-20 mb-5">
+            <div className="rounded-[28px] border border-neutral-200 bg-white/95 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.05)] backdrop-blur md:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-700">
+                      {sorted.length} Result{sorted.length === 1 ? "" : "s"}
+                    </span>
 
-            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                Sort By
-              </span>
+                    {activeFilterCount > 0 ? (
+                      <span className="inline-flex items-center rounded-full border border-[#a30105]/15 bg-[#a30105]/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#a30105]">
+                        {activeFilterCount} Active Filter
+                        {activeFilterCount === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
+                  </div>
 
-              <select
-                value={sort}
-                onChange={(e) =>
-                  updateFilters({
-                    sort: e.target.value || null,
-                  })
-                }
-                className="min-h-[44px] rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm font-medium text-neutral-900 outline-none transition focus:border-neutral-300 focus:bg-white"
-              >
-                <option value="">Default</option>
-                <option value="price_asc">Price: Low to High</option>
-                <option value="price_desc">Price: High to Low</option>
-              </select>
+                  <h2 className="mt-3 text-lg font-bold text-neutral-950 md:text-xl">
+                    Browse Products
+                  </h2>
+                  <p className="mt-1 text-sm text-neutral-500">
+                    Keep browsing with fast filters and premium product sorting.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                  <div className="flex items-center gap-3">
+                    <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                      Sort By
+                    </span>
+
+                    <select
+                      value={sort}
+                      onChange={(e) =>
+                        updateFilters({
+                          sort: e.target.value || null,
+                        })
+                      }
+                      className="min-h-[46px] rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm font-medium text-neutral-900 outline-none transition focus:border-neutral-300 focus:bg-white"
+                    >
+                      <option value="">Default</option>
+                      <option value="price_asc">Price: Low to High</option>
+                      <option value="price_desc">Price: High to Low</option>
+                    </select>
+                  </div>
+
+                  {activeFilterCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={clearAll}
+                      className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-50"
+                    >
+                      Clear All
+                    </button>
+                  ) : null}
+                </div>
+              </div>
             </div>
           </div>
 
