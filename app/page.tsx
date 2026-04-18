@@ -459,25 +459,25 @@ function HomepageProductBlock({
       </div>
 
       {isLoading ? (
-        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 md:gap-6 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
               className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-[0_12px_35px_rgba(0,0,0,0.04)]"
             >
-              <div className="h-60 animate-pulse bg-neutral-100" />
-              <div className="space-y-3 p-4">
-                <div className="h-4 w-24 animate-pulse rounded bg-neutral-100" />
+              <div className="h-44 animate-pulse bg-neutral-100 sm:h-52 md:h-60" />
+              <div className="space-y-3 p-3 md:p-4">
+                <div className="h-4 w-20 animate-pulse rounded bg-neutral-100" />
                 <div className="h-5 w-full animate-pulse rounded bg-neutral-200" />
                 <div className="h-5 w-3/4 animate-pulse rounded bg-neutral-100" />
-                <div className="h-4 w-20 animate-pulse rounded bg-neutral-100" />
+                <div className="h-4 w-16 animate-pulse rounded bg-neutral-100" />
               </div>
             </div>
           ))}
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 md:gap-6 xl:grid-cols-4">
             {products.map((p) => (
               <ProductCard key={p.item_code || p.id} p={p} />
             ))}
