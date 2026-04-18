@@ -51,6 +51,8 @@ type ERPItem = {
   brand?: string | null;
   description?: string | null;
   custom_website_category?: string | null;
+  custom_homepage_section?: string | null;
+  custom_homepage_sort_order?: number | null;
   disabled?: 0 | 1;
   vu_show_in_website?: 0 | 1;
 };
@@ -85,6 +87,8 @@ type Product = {
   brand: string;
   item_group: string;
   category: string;
+  homepage_section: string;
+  homepage_sort_order: number | null;
   slug: string;
   route: string;
   in_stock: boolean;
@@ -140,6 +144,11 @@ function parsePositiveNumber(value: string | null) {
   if (value == null || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function parseInteger(value: string | null, fallback: number) {
+  const n = Number.parseInt(value || "", 10);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function buildApiUrl(path: string, params?: Record<string, string>) {
@@ -223,6 +232,7 @@ function matchesSearch(p: Product, q: string) {
     p.brand.toLowerCase().includes(qq) ||
     p.item_group.toLowerCase().includes(qq) ||
     p.category.toLowerCase().includes(qq) ||
+    p.homepage_section.toLowerCase().includes(qq) ||
     p.description.toLowerCase().includes(qq)
   );
 }
@@ -233,15 +243,18 @@ export async function GET(req: Request) {
     assertEnv();
 
     const url = new URL(req.url);
+
     const brand = sanitizeString(url.searchParams.get("brand"));
     const group = sanitizeString(url.searchParams.get("group"));
     const category = sanitizeString(url.searchParams.get("category"));
+    const homepageSection = sanitizeString(url.searchParams.get("homepage_section"));
     const q = sanitizeString(url.searchParams.get("q"));
     const minPrice = parsePositiveNumber(url.searchParams.get("min_price"));
     const maxPrice = parsePositiveNumber(url.searchParams.get("max_price"));
-    const page = Math.max(parseInt(url.searchParams.get("page") || "1", 10) || 1, 1);
+    const sort = sanitizeString(url.searchParams.get("sort"));
+    const page = Math.max(parseInteger(url.searchParams.get("page"), 1), 1);
     const limit = Math.min(
-      Math.max(parseInt(url.searchParams.get("limit") || "12", 10) || 12, 1),
+      Math.max(parseInteger(url.searchParams.get("limit"), 12), 1),
       200
     );
 
@@ -252,6 +265,9 @@ export async function GET(req: Request) {
     if (brand) filters.push(["brand", "=", brand]);
     if (group) filters.push(["item_group", "=", group]);
     if (category) filters.push(["custom_website_category", "=", category]);
+    if (homepageSection) {
+      filters.push(["custom_homepage_section", "=", homepageSection]);
+    }
 
     const items = await erpResourceList<ERPItem>("Item", {
       fields: [
@@ -263,6 +279,8 @@ export async function GET(req: Request) {
         "brand",
         "description",
         "custom_website_category",
+        "custom_homepage_section",
+        "custom_homepage_sort_order",
         "disabled",
         "vu_show_in_website",
       ],
@@ -284,9 +302,11 @@ export async function GET(req: Request) {
               brand,
               group,
               category,
+              homepage_section: homepageSection,
               q,
               min_price: minPrice,
               max_price: maxPrice,
+              sort,
             },
           },
         },
@@ -344,6 +364,11 @@ export async function GET(req: Request) {
       const item_name = sanitizeString(it.item_name, it.item_code);
       const slug = toSlug(item_name || it.item_code);
 
+      const homepageSortOrderRaw = Number(it.custom_homepage_sort_order);
+      const homepageSortOrder = Number.isFinite(homepageSortOrderRaw)
+        ? homepageSortOrderRaw
+        : null;
+
       return {
         item_code: it.item_code,
         item_name,
@@ -355,6 +380,8 @@ export async function GET(req: Request) {
         brand: sanitizeString(it.brand),
         item_group: sanitizeString(it.item_group),
         category: sanitizeString(it.custom_website_category),
+        homepage_section: sanitizeString(it.custom_homepage_section),
+        homepage_sort_order: homepageSortOrder,
         slug,
         route: `/products/${slug}`,
         in_stock: stock > 0,
@@ -374,10 +401,43 @@ export async function GET(req: Request) {
       products = products.filter((p) => matchesSearch(p, q));
     }
 
-    products.sort((a, b) => {
-      if (a.in_stock !== b.in_stock) return a.in_stock ? -1 : 1;
-      return a.item_name.localeCompare(b.item_name);
-    });
+    if (sort === "price_asc") {
+      products.sort((a, b) => {
+        const aPrice =
+          typeof a.price === "number" ? a.price : Number.POSITIVE_INFINITY;
+        const bPrice =
+          typeof b.price === "number" ? b.price : Number.POSITIVE_INFINITY;
+        return aPrice - bPrice;
+      });
+    } else if (sort === "price_desc") {
+      products.sort((a, b) => {
+        const aPrice =
+          typeof a.price === "number" ? a.price : Number.NEGATIVE_INFINITY;
+        const bPrice =
+          typeof b.price === "number" ? b.price : Number.NEGATIVE_INFINITY;
+        return bPrice - aPrice;
+      });
+    } else if (sort === "homepage") {
+      products.sort((a, b) => {
+        const aOrder =
+          typeof a.homepage_sort_order === "number"
+            ? a.homepage_sort_order
+            : Number.POSITIVE_INFINITY;
+        const bOrder =
+          typeof b.homepage_sort_order === "number"
+            ? b.homepage_sort_order
+            : Number.POSITIVE_INFINITY;
+
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        if (a.in_stock !== b.in_stock) return a.in_stock ? -1 : 1;
+        return a.item_name.localeCompare(b.item_name);
+      });
+    } else {
+      products.sort((a, b) => {
+        if (a.in_stock !== b.in_stock) return a.in_stock ? -1 : 1;
+        return a.item_name.localeCompare(b.item_name);
+      });
+    }
 
     const total = products.length;
     const pages = total > 0 ? Math.ceil(total / limit) : 0;
@@ -396,9 +456,11 @@ export async function GET(req: Request) {
             brand,
             group,
             category,
+            homepage_section: homepageSection,
             q,
             min_price: minPrice,
             max_price: maxPrice,
+            sort,
           },
         },
       },
