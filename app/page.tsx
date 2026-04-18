@@ -5,10 +5,36 @@ import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
 import useSWR from "swr";
 import { useEffect, useRef, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
+type Product = {
+  id: string;
+  name?: string | null;
+  image: string | null;
+  price: number | null;
+  stock_qty?: number | null;
+  in_stock?: boolean;
+  item_group?: string | null;
+  brand?: string | null;
+  category?: string | null;
+};
+
+type CategoryTile = {
+  title: string;
+  href: string;
+  image: string;
+  subtitle: string;
+};
+
+type HomeSection = {
+  key: string;
+  title: string;
+  subtitle: string;
+  href: string;
+  match: (p: Product) => boolean;
+};
 
 /** ---------------- Hero Slider ---------------- **/
 function HeroSlider() {
@@ -305,45 +331,326 @@ function TrendingCollageSection() {
   );
 }
 
-/** ---------------- HomeInner (uses useSearchParams) ---------------- **/
+/** ---------------- Category Tiles ---------------- **/
+function CategoryTilesSection() {
+  const tiles: CategoryTile[] = [
+    {
+      title: "PODS",
+      subtitle: "Compact pod systems and everyday devices",
+      href: "/products?category=Pod%20Systems",
+      image: "/images/categories/pods.jpg",
+    },
+    {
+      title: "E-LIQUIDS",
+      subtitle: "Smooth flavors, premium blends, clean selection",
+      href: "/products?group=E-Liquids",
+      image: "/images/categories/eliquids.jpg",
+    },
+    {
+      title: "POD MODS",
+      subtitle: "Performance-focused pod mods and MTL kits",
+      href: "/products?group=Devices",
+      image: "/images/categories/pod-mods.jpg",
+    },
+    {
+      title: "DISPOSABLES",
+      subtitle: "Ready to use, quick, convenient and popular",
+      href: "/products?group=Disposables",
+      image: "/images/categories/disposables.jpg",
+    },
+    {
+      title: "COILS / PODS / CARTRIDGES",
+      subtitle: "Refill essentials and replacement hardware",
+      href: "/products?group=Coils",
+      image: "/images/categories/coils.jpg",
+    },
+  ];
+
+  return (
+    <section id="collections" className="space-y-8">
+      <div className="text-center">
+        <span className="inline-flex rounded-full border border-neutral-200 bg-white px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-700 shadow-sm">
+          Collections
+        </span>
+        <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-neutral-950 md:text-4xl">
+          Explore by Category
+        </h2>
+        <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-neutral-600 md:text-base">
+          Browse the storefront through premium category blocks designed for
+          faster discovery.
+        </p>
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-12">
+        <Link
+          href={tiles[0].href}
+          className="group relative overflow-hidden rounded-[28px] border border-neutral-200 bg-black md:col-span-4 lg:min-h-[280px]"
+        >
+          <div className="absolute inset-0">
+            <Image
+              src={tiles[0].image}
+              alt={tiles[0].title}
+              fill
+              className="object-cover transition duration-500 group-hover:scale-[1.05]"
+            />
+            <div className="absolute inset-0 bg-black/45 transition duration-300 group-hover:bg-black/35" />
+          </div>
+          <div className="relative flex h-full min-h-[220px] flex-col justify-end p-6 text-white">
+            <div className="text-2xl font-extrabold tracking-[0.05em]">
+              {tiles[0].title}
+            </div>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-white/85">
+              {tiles[0].subtitle}
+            </p>
+          </div>
+        </Link>
+
+        <Link
+          href={tiles[1].href}
+          className="group relative overflow-hidden rounded-[28px] border border-neutral-200 bg-black md:col-span-5 lg:min-h-[280px]"
+        >
+          <div className="absolute inset-0">
+            <Image
+              src={tiles[1].image}
+              alt={tiles[1].title}
+              fill
+              className="object-cover transition duration-500 group-hover:scale-[1.05]"
+            />
+            <div className="absolute inset-0 bg-black/45 transition duration-300 group-hover:bg-black/35" />
+          </div>
+          <div className="relative flex h-full min-h-[220px] flex-col justify-end p-6 text-white">
+            <div className="text-2xl font-extrabold tracking-[0.05em]">
+              {tiles[1].title}
+            </div>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-white/85">
+              {tiles[1].subtitle}
+            </p>
+          </div>
+        </Link>
+
+        <Link
+          href={tiles[2].href}
+          className="group relative overflow-hidden rounded-[28px] border border-neutral-200 bg-black md:col-span-3 lg:min-h-[280px]"
+        >
+          <div className="absolute inset-0">
+            <Image
+              src={tiles[2].image}
+              alt={tiles[2].title}
+              fill
+              className="object-cover transition duration-500 group-hover:scale-[1.05]"
+            />
+            <div className="absolute inset-0 bg-black/45 transition duration-300 group-hover:bg-black/35" />
+          </div>
+          <div className="relative flex h-full min-h-[220px] flex-col justify-end p-6 text-white">
+            <div className="text-2xl font-extrabold tracking-[0.05em]">
+              {tiles[2].title}
+            </div>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-white/85">
+              {tiles[2].subtitle}
+            </p>
+          </div>
+        </Link>
+
+        <Link
+          href={tiles[3].href}
+          className="group relative overflow-hidden rounded-[28px] border border-neutral-200 bg-black md:col-span-4 lg:min-h-[280px]"
+        >
+          <div className="absolute inset-0">
+            <Image
+              src={tiles[3].image}
+              alt={tiles[3].title}
+              fill
+              className="object-cover transition duration-500 group-hover:scale-[1.05]"
+            />
+            <div className="absolute inset-0 bg-black/45 transition duration-300 group-hover:bg-black/35" />
+          </div>
+          <div className="relative flex h-full min-h-[220px] flex-col justify-end p-6 text-white">
+            <div className="text-2xl font-extrabold tracking-[0.05em]">
+              {tiles[3].title}
+            </div>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-white/85">
+              {tiles[3].subtitle}
+            </p>
+          </div>
+        </Link>
+
+        <Link
+          href={tiles[4].href}
+          className="group relative overflow-hidden rounded-[28px] border border-neutral-200 bg-black md:col-span-8 lg:min-h-[280px]"
+        >
+          <div className="absolute inset-0">
+            <Image
+              src={tiles[4].image}
+              alt={tiles[4].title}
+              fill
+              className="object-cover transition duration-500 group-hover:scale-[1.05]"
+            />
+            <div className="absolute inset-0 bg-black/45 transition duration-300 group-hover:bg-black/35" />
+          </div>
+          <div className="relative flex h-full min-h-[220px] flex-col justify-end p-6 text-white">
+            <div className="text-2xl font-extrabold tracking-[0.05em]">
+              {tiles[4].title}
+            </div>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-white/85">
+              {tiles[4].subtitle}
+            </p>
+          </div>
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+/** ---------------- Home Product Section ---------------- **/
+function HomeProductSection({
+  title,
+  subtitle,
+  href,
+  products,
+}: {
+  title: string;
+  subtitle: string;
+  href: string;
+  products: Product[];
+}) {
+  if (!products.length) return null;
+
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-col gap-4 border-t border-neutral-200 pt-8 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="inline-flex rounded-full border border-neutral-200 bg-white px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-700 shadow-sm">
+            {title}
+          </div>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-600 md:text-base">
+            {subtitle}
+          </p>
+        </div>
+
+        <Link
+          href={href}
+          className="inline-flex min-h-[44px] items-center justify-center rounded-2xl border border-neutral-300 bg-white px-5 py-2 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-50"
+        >
+          View All
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
+        {products.map((p) => (
+          <ProductCard key={p.id} p={p} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** ---------------- HomeInner ---------------- **/
 function HomeInner() {
   const { data, isLoading } = useSWR("/api/products", fetcher);
-  const products = data?.products || [];
+  const products: Product[] = Array.isArray(data?.products) ? data.products : [];
 
-  const params = useSearchParams();
-  const activeBrand = (params.get("brand") || "").toLowerCase();
+  const normalize = (value?: string | null) => (value || "").trim().toLowerCase();
 
-  const BRANDS = [
-    "Aspire",
-    "Uwell",
-    "Freemax",
-    "GeekVape",
-    "KUMIHO",
-    "Lost Vape",
-    "Oxva",
-    "PAVA",
-    "ROMIO",
-    "SMOK",
-    "Vaporesso",
-    "Voopoo",
-    "Yozo",
-    "TOKYO DISPOSABLE",
-    "H-ONE",
-    "Used Pods",
-    "Rincoe",
-    "Reymont",
-    "Chinese Pods",
-    "WOMO",
+  const sections: HomeSection[] = [
+    {
+      key: "pods",
+      title: "VAPES & PODS",
+      subtitle: "Popular pod systems and compact devices selected for the homepage.",
+      href: "/products?category=Pod%20Systems",
+      match: (p) => {
+        const category = normalize(p.category);
+        const group = normalize(p.item_group);
+        const name = normalize(p.name);
+        return (
+          category.includes("pod") ||
+          name.includes("pod") ||
+          name.includes("caliburn") ||
+          name.includes("argus") ||
+          group.includes("device")
+        );
+      },
+    },
+    {
+      key: "nic-salts",
+      title: "NIC SALTS",
+      subtitle: "Smooth and satisfying nic salt selections for everyday use.",
+      href: "/products?q=nic%20salt",
+      match: (p) => {
+        const category = normalize(p.category);
+        const group = normalize(p.item_group);
+        const name = normalize(p.name);
+        return (
+          category.includes("nic") ||
+          name.includes("nic salt") ||
+          name.includes("salt") ||
+          group.includes("e-liquid")
+        );
+      },
+    },
+    {
+      key: "freebase",
+      title: "FREEBASE E-LIQUIDS",
+      subtitle: "Classic freebase liquid options with clean presentation and quick access.",
+      href: "/products?group=E-Liquids",
+      match: (p) => {
+        const category = normalize(p.category);
+        const group = normalize(p.item_group);
+        const name = normalize(p.name);
+        return (
+          group.includes("e-liquid") &&
+          !category.includes("nic") &&
+          !name.includes("nic salt") &&
+          !name.includes("salt")
+        );
+      },
+    },
+    {
+      key: "disposables",
+      title: "DISPOSABLES",
+      subtitle: "Convenient disposable devices for quick pick and fast browsing.",
+      href: "/products?group=Disposables",
+      match: (p) => {
+        const category = normalize(p.category);
+        const group = normalize(p.item_group);
+        const name = normalize(p.name);
+        return (
+          category.includes("disposable") ||
+          group.includes("disposable") ||
+          name.includes("disposable")
+        );
+      },
+    },
+    {
+      key: "coils",
+      title: "COILS / PODS / CARTRIDGES",
+      subtitle: "Replacement essentials including coils, pods, and cartridges.",
+      href: "/products?group=Coils",
+      match: (p) => {
+        const category = normalize(p.category);
+        const group = normalize(p.item_group);
+        const name = normalize(p.name);
+        return (
+          group.includes("coil") ||
+          name.includes("coil") ||
+          name.includes("cartridge") ||
+          name.includes("replacement pod") ||
+          name.includes("pod cartridge")
+        );
+      },
+    },
   ];
 
-  const COLLECTIONS = [
-    { name: "Devices", img: "/images/categories/devices.png" },
-    { name: "Coils", img: "/images/categories/coils.png" },
-    { name: "E-Liquids", img: "/images/categories/eliquids.png" },
-    { name: "Disposables", img: "/images/categories/disposables.png" },
-  ];
+  const sectionProducts = sections.map((section) => {
+    const matched = products
+      .filter(section.match)
+      .filter((p) => p.id)
+      .slice(0, 12);
 
-  const featured = products.slice(0, 6);
+    return {
+      ...section,
+      products: matched,
+    };
+  });
 
   return (
     <div className="mx-auto max-w-7xl space-y-16 px-4 py-8 md:px-6 md:space-y-20">
@@ -382,86 +689,21 @@ function HomeInner() {
         ))}
       </section>
 
-      <section id="collections" className="space-y-8">
-        <div className="text-center">
-          <span className="inline-flex rounded-full border border-neutral-200 bg-white px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-700 shadow-sm">
-            Collections
-          </span>
-          <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-neutral-950 md:text-4xl">
-            Shop Our Collections
-          </h2>
-          <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-neutral-600 md:text-base">
-            Browse curated categories for a faster and more premium shopping
-            experience.
-          </p>
-        </div>
+      <CategoryTilesSection />
 
-        <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
-          {COLLECTIONS.map((c) => (
-            <Link
-              key={c.name}
-              href={`/products?group=${encodeURIComponent(c.name)}`}
-              className="group rounded-[28px] border border-neutral-200 bg-white p-4 text-center shadow-[0_12px_35px_rgba(0,0,0,0.04)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(0,0,0,0.07)]"
-            >
-              <div className="mx-auto flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-50">
-                <Image
-                  src={c.img}
-                  alt={c.name}
-                  width={112}
-                  height={112}
-                  className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                />
-              </div>
-              <div className="mt-4 text-sm font-semibold text-neutral-900 md:text-base">
-                {c.name}
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr] lg:items-start">
-        <aside className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.05)] lg:sticky lg:top-24">
-          <div className="mb-5">
-            <h3 className="text-lg font-bold text-neutral-950">Brands</h3>
-            <p className="mt-1 text-sm text-neutral-500">
-              Shop your favorite brands directly.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            {BRANDS.map((b) => {
-              const isActive = activeBrand === b.toLowerCase();
-
-              return (
-                <Link
-                  key={b}
-                  href={`/products?brand=${encodeURIComponent(b)}`}
-                  className={`inline-flex min-h-[42px] items-center justify-center rounded-2xl px-4 py-2 text-sm font-medium transition ${
-                    isActive
-                      ? "bg-vu-red text-white shadow-sm"
-                      : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-white hover:text-neutral-900"
-                  }`}
-                >
-                  {b}
-                </Link>
-              );
-            })}
-          </div>
-        </aside>
-
-        <div className="space-y-5">
-          <div className="flex flex-col gap-3 rounded-[28px] border border-neutral-200 bg-white p-5 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:flex-row md:items-center md:justify-between">
+      <section className="space-y-8">
+        <div className="rounded-[28px] border border-neutral-200 bg-white p-5 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:p-7">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <span className="inline-flex rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-700">
-                New Arrivals
+                Featured Categories
               </span>
               <h2 className="mt-3 text-2xl font-bold text-neutral-950 md:text-3xl">
-                Fresh Picks from Vape Ustad
+                Curated product blocks for faster shopping
               </h2>
-              <p className="mt-2 text-sm leading-6 text-neutral-600">
-                Explore featured products selected for a clean and modern
-                storefront experience.
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-600">
+                Explore category-wise products directly from the homepage with a
+                cleaner premium layout and faster product discovery.
               </p>
             </div>
 
@@ -472,51 +714,68 @@ function HomeInner() {
               View All Products
             </Link>
           </div>
-
-          {isLoading ? (
-            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-[0_12px_35px_rgba(0,0,0,0.04)]"
-                >
-                  <div className="h-60 animate-pulse bg-neutral-100" />
-                  <div className="space-y-3 p-4">
-                    <div className="h-4 w-24 animate-pulse rounded bg-neutral-100" />
-                    <div className="h-5 w-full animate-pulse rounded bg-neutral-200" />
-                    <div className="h-5 w-3/4 animate-pulse rounded bg-neutral-100" />
-                    <div className="h-4 w-20 animate-pulse rounded bg-neutral-100" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : featured.length === 0 ? (
-            <div className="rounded-[28px] border border-neutral-200 bg-white p-10 text-center shadow-[0_20px_60px_rgba(0,0,0,0.05)]">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-neutral-100 text-2xl">
-                📦
-              </div>
-              <h3 className="mt-4 text-xl font-bold text-neutral-950">
-                Products coming soon
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-neutral-600">
-                We are preparing more items for the storefront. Please check
-                back shortly.
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-              {featured.map((p: any) => (
-                <ProductCard key={p.id} p={p} />
-              ))}
-            </div>
-          )}
         </div>
+
+        {isLoading ? (
+          <div className="space-y-10">
+            {Array.from({ length: 3 }).map((_, sectionIndex) => (
+              <div key={sectionIndex} className="space-y-6">
+                <div className="flex flex-col gap-3 border-t border-neutral-200 pt-8">
+                  <div className="h-8 w-40 animate-pulse rounded-full bg-neutral-100" />
+                  <div className="h-5 w-80 animate-pulse rounded bg-neutral-100" />
+                </div>
+
+                <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-[0_12px_35px_rgba(0,0,0,0.04)]"
+                    >
+                      <div className="h-60 animate-pulse bg-neutral-100" />
+                      <div className="space-y-3 p-4">
+                        <div className="h-4 w-24 animate-pulse rounded bg-neutral-100" />
+                        <div className="h-5 w-full animate-pulse rounded bg-neutral-200" />
+                        <div className="h-5 w-3/4 animate-pulse rounded bg-neutral-100" />
+                        <div className="h-4 w-20 animate-pulse rounded bg-neutral-100" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : sectionProducts.every((section) => section.products.length === 0) ? (
+          <div className="rounded-[28px] border border-neutral-200 bg-white p-10 text-center shadow-[0_20px_60px_rgba(0,0,0,0.05)]">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-neutral-100 text-2xl">
+              📦
+            </div>
+            <h3 className="mt-4 text-xl font-bold text-neutral-950">
+              Products coming soon
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">
+              We are preparing more items for the storefront. Please check back
+              shortly.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-10">
+            {sectionProducts.map((section) => (
+              <HomeProductSection
+                key={section.key}
+                title={section.title}
+                subtitle={section.subtitle}
+                href={section.href}
+                products={section.products}
+              />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
 }
 
-/** ---------------- Page (wrap inner with Suspense) ---------------- **/
+/** ---------------- Page ---------------- **/
 export default function HomePage() {
   return (
     <div className="space-y-16">
