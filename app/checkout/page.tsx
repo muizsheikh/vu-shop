@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/store/cart";
 
@@ -482,9 +483,12 @@ export default function CheckoutPage() {
               <button
                 onClick={handleCOD}
                 disabled={loading || cartEmpty}
-                className="mt-5 inline-flex min-h-[54px] w-full items-center justify-center rounded-2xl bg-[#a30105] px-6 py-3 text-base font-semibold text-white shadow-[0_10px_30px_rgba(163,1,5,0.2)] transition hover:bg-[#8e0104] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-5 inline-flex min-h-[54px] w-full items-center justify-center gap-3 rounded-2xl border border-[#a30105]/15 bg-white px-6 py-3 text-base font-semibold text-neutral-900 shadow-[0_10px_30px_rgba(0,0,0,0.05)] transition hover:bg-[#fff7f7] hover:border-[#a30105]/25 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? "Placing order..." : "Place Cash on Delivery Order"}
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#a30105]/10 text-[#a30105]">
+                  <ShoppingCart className="h-4.5 w-4.5" />
+                </span>
+                <span>{loading ? "Placing order..." : "Place Cash on Delivery Order"}</span>
               </button>
 
               <p className="mt-3 text-center text-xs leading-5 text-neutral-500">

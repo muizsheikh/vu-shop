@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { ShoppingCart } from "lucide-react";
 import { useCartStore } from "@/store/cart";
 
 function isTypingTarget(target: EventTarget | null) {
@@ -63,9 +64,15 @@ export default function CartDrawer() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex h-10 items-center justify-center rounded-2xl bg-[#a30105] px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(163,1,5,0.18)] transition hover:bg-[#8e0104] active:scale-[0.98]"
+        className="inline-flex h-11 items-center gap-2 rounded-2xl border border-[#a30105]/15 bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 shadow-[0_8px_24px_rgba(0,0,0,0.05)] transition hover:bg-[#fff7f7] hover:border-[#a30105]/25 active:scale-[0.98]"
       >
-        Cart ({cartCount})
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#a30105]/10 text-[#a30105]">
+          <ShoppingCart className="h-4.5 w-4.5" />
+        </span>
+        <span>Cart</span>
+        <span className="inline-flex min-w-[26px] items-center justify-center rounded-full bg-[#a30105] px-2 py-0.5 text-xs font-bold text-white">
+          {cartCount}
+        </span>
       </button>
 
       {!open ? null : (
@@ -114,7 +121,7 @@ export default function CartDrawer() {
                   <Link
                     href="/products"
                     onClick={() => setOpen(false)}
-                    className="mt-5 inline-flex min-h-[46px] items-center justify-center rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(163,1,5,0.16)] transition hover:bg-[#8e0104]"
+                    className="mt-5 inline-flex min-h-[46px] items-center justify-center rounded-2xl border border-[#a30105]/15 bg-white px-5 py-3 text-sm font-semibold text-neutral-900 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:bg-[#fff7f7] hover:border-[#a30105]/25"
                   >
                     Continue Shopping
                   </Link>
@@ -220,10 +227,10 @@ export default function CartDrawer() {
                 <Link
                   href="/checkout"
                   onClick={() => setOpen(false)}
-                  className={`inline-flex min-h-[48px] flex-1 items-center justify-center rounded-2xl px-4 py-3 text-center text-sm font-semibold text-white transition ${
+                  className={`inline-flex min-h-[48px] flex-1 items-center justify-center rounded-2xl px-4 py-3 text-center text-sm font-semibold transition ${
                     cartEmpty
-                      ? "pointer-events-none bg-neutral-300"
-                      : "bg-[#a30105] shadow-[0_8px_24px_rgba(163,1,5,0.16)] hover:bg-[#8e0104]"
+                      ? "pointer-events-none bg-neutral-300 text-white"
+                      : "border border-[#a30105]/15 bg-white text-neutral-900 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:bg-[#fff7f7] hover:border-[#a30105]/25"
                   }`}
                 >
                   Checkout
