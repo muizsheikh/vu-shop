@@ -69,8 +69,7 @@ export default function CartDrawer() {
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#a30105]/10 text-[#a30105]">
           <ShoppingCart className="h-4.5 w-4.5" />
         </span>
-        <span>Cart</span>
-        <span className="inline-flex min-w-[26px] items-center justify-center rounded-full bg-[#a30105] px-2 py-0.5 text-xs font-bold text-white">
+                <span className="inline-flex min-w-[26px] items-center justify-center rounded-full bg-[#a30105] px-2 py-0.5 text-xs font-bold text-white">
           {cartCount}
         </span>
       </button>
