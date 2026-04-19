@@ -1,4 +1,3 @@
-// /app/api/cod/route.ts
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -6,8 +5,20 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_CURRENCY = "PKR";
 const DEFAULT_COUNTRY = "Pakistan";
-const DEFAULT_CUSTOMER_GROUP = process.env.ERP_CUSTOMER_GROUP || "All Customer Groups";
-const DEFAULT_TERRITORY = process.env.ERP_TERRITORY || "All Territories";
+
+const PREFERRED_CUSTOMER_GROUPS = [
+  process.env.ERP_CUSTOMER_GROUP || "",
+  "Website Customers",
+  "Individual",
+  "Commercial",
+  "All Customer Groups",
+].filter(Boolean);
+
+const PREFERRED_TERRITORIES = [
+  process.env.ERP_TERRITORY || "",
+  "Pakistan",
+  "All Territories",
+].filter(Boolean);
 
 function normBase(u: string) {
   let x = (u || "").trim();
@@ -73,6 +84,10 @@ async function erpnextFetch(path: string, opts: RequestInit = {}) {
   });
 
   return safeJson(res);
+}
+
+function enc(value: unknown) {
+  return encodeURIComponent(JSON.stringify(value));
 }
 
 function sanitizeString(value: unknown, fallback = "") {
@@ -156,9 +171,77 @@ function normalizeCartItems(rawItems: unknown): NormalizedCartItem[] {
   return items;
 }
 
+/* ---------- Dynamic ERP link resolution ---------- */
+async function getDoctypeList(
+  doctype: string,
+  fields: string[] = ["name"],
+  limit = 200
+) {
+  const json = await erpnextFetch(
+    `${doctype}?fields=${enc(fields)}&limit_page_length=${limit}`
+  );
+  return Array.isArray(json?.data) ? json.data : [];
+}
+
+async function resolvePreferredLinkName(args: {
+  doctype: string;
+  preferredNames: string[];
+  preferNonGroup?: boolean;
+}) {
+  const rows = await getDoctypeList(args.doctype, ["name", "is_group"], 200);
+
+  if (!rows.length) {
+    throw new Error(`No records found in ERP doctype: ${args.doctype}`);
+  }
+
+  for (const preferred of args.preferredNames) {
+    const exact = rows.find(
+      (row: any) => String(row?.name || "").trim() === preferred
+    );
+    if (exact?.name) return exact.name;
+  }
+
+  if (args.preferNonGroup) {
+    const nonGroup = rows.find((row: any) => Number(row?.is_group || 0) !== 1);
+    if (nonGroup?.name) return nonGroup.name;
+  }
+
+  if (rows[0]?.name) return rows[0].name;
+
+  throw new Error(`Could not resolve valid ${args.doctype}`);
+}
+
+let customerGroupCache: string | null = null;
+let territoryCache: string | null = null;
+
+async function getResolvedCustomerGroup() {
+  if (customerGroupCache) return customerGroupCache;
+
+  customerGroupCache = await resolvePreferredLinkName({
+    doctype: "Customer Group",
+    preferredNames: PREFERRED_CUSTOMER_GROUPS,
+    preferNonGroup: true,
+  });
+
+  return customerGroupCache;
+}
+
+async function getResolvedTerritory() {
+  if (territoryCache) return territoryCache;
+
+  territoryCache = await resolvePreferredLinkName({
+    doctype: "Territory",
+    preferredNames: PREFERRED_TERRITORIES,
+    preferNonGroup: true,
+  });
+
+  return territoryCache;
+}
+
+/* ---------- Customer ---------- */
 async function findCustomerByEmail(email: string) {
-  const filters = encodeURIComponent(JSON.stringify([["email_id", "=", email]]));
-  const fields = encodeURIComponent(JSON.stringify(["name", "customer_name", "mobile_no"]));
+  const filters = enc([["email_id", "=", email]]);
+  const fields = enc(["name", "customer_name", "mobile_no"]);
 
   const json = await erpnextFetch(
     `Customer?filters=${filters}&fields=${fields}&limit_page_length=1`
@@ -172,12 +255,15 @@ async function createCustomer(input: {
   email: string;
   phone?: string;
 }) {
+  const customerGroup = await getResolvedCustomerGroup();
+  const territory = await getResolvedTerritory();
+
   const payload: Record<string, unknown> = {
     customer_name: input.name,
     customer_type: "Individual",
     email_id: input.email,
-    customer_group: DEFAULT_CUSTOMER_GROUP,
-    territory: DEFAULT_TERRITORY,
+    customer_group: customerGroup,
+    territory,
   };
 
   if (input.phone) payload.mobile_no = input.phone;
@@ -229,21 +315,20 @@ async function ensureCustomer(input: {
   return created.name as string;
 }
 
+/* ---------- Address ---------- */
 async function findShippingAddress(input: {
   customerId: string;
   address_line1: string;
   city: string;
   country: string;
 }) {
-  const filters = encodeURIComponent(
-    JSON.stringify([
-      ["address_line1", "=", input.address_line1],
-      ["city", "=", input.city],
-      ["country", "=", input.country],
-    ])
-  );
+  const filters = enc([
+    ["address_line1", "=", input.address_line1],
+    ["city", "=", input.city],
+    ["country", "=", input.country],
+  ]);
 
-  const fields = encodeURIComponent(JSON.stringify(["name"]));
+  const fields = enc(["name"]);
 
   const json = await erpnextFetch(
     `Address?filters=${filters}&fields=${fields}&limit_page_length=10`
@@ -257,7 +342,8 @@ async function findShippingAddress(input: {
     const links = Array.isArray(detail?.data?.links) ? detail.data.links : [];
     const linked = links.some(
       (l: any) =>
-        l?.link_doctype === "Customer" && String(l?.link_name || "") === input.customerId
+        l?.link_doctype === "Customer" &&
+        String(l?.link_name || "") === input.customerId
     );
     if (linked) return detail.data.name;
   }
@@ -327,7 +413,10 @@ function buildSalesOrderItems(items: NormalizedCartItem[]) {
   }));
 }
 
-function buildOrderNote(items: NormalizedCartItem[], customer: { name: string; email: string; phone?: string }) {
+function buildOrderRemarks(
+  items: NormalizedCartItem[],
+  customer: { name: string; email: string; phone?: string }
+) {
   const lines = items.map(
     (it) =>
       `• ${it.item_name} (${it.item_code}) × ${it.qty} @ Rs ${it.rate.toLocaleString()} = Rs ${it.amount.toLocaleString()}`
@@ -393,7 +482,7 @@ export async function POST(req: Request) {
       currency: DEFAULT_CURRENCY,
       conversion_rate: 1,
       items: buildSalesOrderItems(items),
-      note: buildOrderNote(items, {
+      remarks: buildOrderRemarks(items, {
         name: customerName,
         email: customerEmail,
         phone: customerPhone || undefined,
