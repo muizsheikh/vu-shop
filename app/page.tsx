@@ -459,7 +459,7 @@ function HomepageProductBlock({
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-2 gap-4 md:gap-6 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:gap-6 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
@@ -477,7 +477,7 @@ function HomepageProductBlock({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-4 md:gap-6 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:gap-6 xl:grid-cols-4">
             {products.map((p) => (
               <ProductCard key={p.item_code || p.id} p={p} />
             ))}
