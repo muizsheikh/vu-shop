@@ -36,40 +36,42 @@ export default function AgeVerificationModal() {
             <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-black/[0.04] blur-3xl" />
           </div>
 
-          <div className="relative border-b border-black/8 bg-gradient-to-b from-[#fff5f5] to-[#fefefe] px-6 py-6 sm:px-8 sm:py-7">
-            <div className="absolute right-6 top-6 hidden sm:flex items-center gap-2 rounded-full border border-black/8 bg-white/80 px-3 py-2 shadow-sm backdrop-blur-sm">
-              <div className="relative h-6 w-6 overflow-hidden rounded-full">
-                <Image
-                  src="/images/vu-age-watermark.png"
-                  alt="Vape Ustad"
-                  fill
-                  className="object-contain"
-                  priority
-                />
+          <div className="relative border-b border-black/8 bg-gradient-to-b from-[#fff5f5] to-[#fefefe] px-6 py-7 sm:px-8 sm:py-8">
+            <div className="mb-5 flex justify-center">
+              <div className="relative rounded-full border border-[#a30105]/10 bg-white/80 px-5 py-3 shadow-[0_10px_30px_rgba(163,1,5,0.06)] backdrop-blur-sm">
+                <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,_rgba(163,1,5,0.06),_transparent_70%)]" />
+                <div className="relative h-12 w-[150px] sm:h-14 sm:w-[180px]">
+                  <Image
+                    src="/images/vu-age-watermark.png"
+                    alt="Vape Ustad"
+                    fill
+                    className="object-contain"
+                    priority
+                  />
+                </div>
               </div>
-              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/55">
-                Vape Ustad
-              </span>
             </div>
 
-            <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#a30105]/8 ring-1 ring-[#a30105]/10">
-              <ShieldCheck className="h-7 w-7 text-[#a30105]" />
+            <div className="mb-4 flex justify-center">
+              <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#a30105]/8 ring-1 ring-[#a30105]/10">
+                <ShieldCheck className="h-7 w-7 text-[#a30105]" />
+              </div>
             </div>
 
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#a30105]">
+            <p className="text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#a30105]">
               Age Restricted Access
             </p>
 
             <h2
               id="age-gate-title"
-              className="mt-2 max-w-[32rem] text-2xl font-semibold tracking-tight text-black sm:text-3xl"
+              className="mx-auto mt-2 max-w-[34rem] text-center text-2xl font-semibold tracking-tight text-black sm:text-3xl"
             >
               Confirm your age to enter Vape Ustad
             </h2>
 
             <p
               id="age-gate-description"
-              className="mt-3 max-w-2xl text-sm leading-6 text-black/65 sm:text-[15px]"
+              className="mx-auto mt-3 max-w-2xl text-center text-sm leading-6 text-black/65 sm:text-[15px]"
             >
               This website contains vape-related products intended only for adults
               of legal smoking age. By entering, you confirm that you are at least
