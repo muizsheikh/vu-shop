@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { ShieldCheck, TriangleAlert } from "lucide-react";
 import useAgeVerification from "@/hooks/useAgeVerification";
 
@@ -10,7 +11,7 @@ export default function AgeVerificationModal() {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-white/70 px-4 backdrop-blur-md"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-white/70 px-4 backdrop-blur-md animate-in fade-in duration-300"
       aria-modal="true"
       role="dialog"
       aria-labelledby="age-gate-title"
@@ -19,7 +20,7 @@ export default function AgeVerificationModal() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(163,1,5,0.08),_transparent_40%),radial-gradient(circle_at_bottom,_rgba(0,0,0,0.04),_transparent_35%)]" />
 
       {isChecking ? (
-        <div className="relative w-full max-w-md rounded-[28px] border border-black/10 bg-[#fefefe] p-8 shadow-[0_20px_80px_rgba(0,0,0,0.10)]">
+        <div className="relative w-full max-w-md rounded-[28px] border border-black/10 bg-[#fefefe] p-8 shadow-[0_20px_80px_rgba(0,0,0,0.10)] animate-in zoom-in-95 fade-in duration-300">
           <div className="mx-auto mb-5 h-12 w-12 animate-spin rounded-full border-2 border-black/10 border-t-[#a30105]" />
           <p className="text-center text-sm font-medium tracking-[0.08em] text-black/60 uppercase">
             Verifying Access
@@ -29,8 +30,25 @@ export default function AgeVerificationModal() {
           </h2>
         </div>
       ) : (
-        <div className="relative w-full max-w-xl overflow-hidden rounded-[32px] border border-black/10 bg-[#fefefe] shadow-[0_25px_100px_rgba(0,0,0,0.14)]">
-          <div className="border-b border-black/8 bg-gradient-to-b from-[#fff5f5] to-[#fefefe] px-6 py-6 sm:px-8 sm:py-7">
+        <div className="relative w-full max-w-xl overflow-hidden rounded-[32px] border border-black/10 bg-[#fefefe] shadow-[0_25px_100px_rgba(0,0,0,0.14)] animate-in zoom-in-95 fade-in duration-300">
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute -right-10 -top-12 h-48 w-48 rounded-full bg-[#a30105]/[0.05] blur-3xl" />
+            <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-black/[0.04] blur-3xl" />
+
+            <div className="absolute inset-y-0 right-0 hidden w-[46%] items-center justify-center sm:flex">
+              <div className="relative h-[240px] w-[240px] opacity-[0.06]">
+                <Image
+                  src="/images/vu-age-watermark.png"
+                  alt="VU watermark"
+                  fill
+                  className="object-contain"
+                  priority
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="relative border-b border-black/8 bg-gradient-to-b from-[#fff5f5] to-[#fefefe] px-6 py-6 sm:px-8 sm:py-7">
             <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#a30105]/8 ring-1 ring-[#a30105]/10">
               <ShieldCheck className="h-7 w-7 text-[#a30105]" />
             </div>
@@ -41,7 +59,7 @@ export default function AgeVerificationModal() {
 
             <h2
               id="age-gate-title"
-              className="mt-2 text-2xl font-semibold tracking-tight text-black sm:text-3xl"
+              className="mt-2 max-w-[28rem] text-2xl font-semibold tracking-tight text-black sm:text-3xl"
             >
               Confirm your age to enter Vape Ustad
             </h2>
@@ -56,16 +74,16 @@ export default function AgeVerificationModal() {
             </p>
           </div>
 
-          <div className="px-6 py-6 sm:px-8 sm:py-7">
+          <div className="relative px-6 py-6 sm:px-8 sm:py-7">
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-black/8 bg-black/[0.02] p-4">
+              <div className="rounded-2xl border border-black/8 bg-black/[0.02] p-4 transition duration-200 hover:bg-black/[0.03]">
                 <p className="text-sm font-semibold text-black">Adults only</p>
                 <p className="mt-1 text-sm leading-6 text-black/60">
                   Entry is restricted to users who are 18+.
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-black/8 bg-black/[0.02] p-4">
+              <div className="rounded-2xl border border-black/8 bg-black/[0.02] p-4 transition duration-200 hover:bg-black/[0.03]">
                 <p className="text-sm font-semibold text-black">One-time confirmation</p>
                 <p className="mt-1 text-sm leading-6 text-black/60">
                   Once accepted, your device will remember this choice.
@@ -84,7 +102,7 @@ export default function AgeVerificationModal() {
               <button
                 type="button"
                 onClick={reject}
-                className="inline-flex h-12 items-center justify-center rounded-2xl border border-black/12 bg-white px-5 text-sm font-medium text-black transition hover:border-black/20 hover:bg-black/[0.03]"
+                className="inline-flex h-12 items-center justify-center rounded-2xl border border-black/12 bg-white px-5 text-sm font-medium text-black transition duration-200 hover:border-black/20 hover:bg-black/[0.03]"
               >
                 I am under 18
               </button>
@@ -92,9 +110,9 @@ export default function AgeVerificationModal() {
               <button
                 type="button"
                 onClick={accept}
-                className="inline-flex h-12 items-center justify-center rounded-2xl bg-[#a30105] px-5 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(163,1,5,0.22)] transition hover:translate-y-[-1px] hover:bg-[#8e0104]"
+                className="inline-flex h-12 items-center justify-center rounded-2xl bg-[#a30105] px-5 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(163,1,5,0.22)] transition duration-200 hover:-translate-y-[1px] hover:bg-[#8e0104]"
               >
-                I am 18 or older
+                Enter Store
               </button>
             </div>
           </div>
