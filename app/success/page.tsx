@@ -24,11 +24,11 @@ function SuccessInner() {
     <section className="mx-auto max-w-[1200px] px-4 py-10 md:px-6 md:py-14">
       <div className="relative overflow-hidden rounded-[34px] border border-black/10 bg-[#fefefe] shadow-[0_24px_80px_rgba(0,0,0,0.08)]">
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute left-1/2 top-0 h-[340px] w-[340px] -translate-x-1/2 rounded-full bg-[#a30105]/[0.05] blur-3xl" />
+          <div className="absolute left-1/2 top-0 h-[340px] w-[340px] -translate-x-1/2 rounded-full bg-emerald-500/[0.08] blur-3xl" />
           <div className="absolute -left-14 bottom-8 h-40 w-40 rounded-full bg-black/[0.035] blur-3xl" />
-          <div className="absolute -right-14 top-10 h-48 w-48 rounded-full bg-[#a30105]/[0.04] blur-3xl" />
+          <div className="absolute -right-14 top-10 h-48 w-48 rounded-full bg-emerald-400/[0.05] blur-3xl" />
 
-          <div className="absolute right-10 top-10 hidden opacity-[0.035] md:block">
+          <div className="absolute right-10 top-10 hidden opacity-[0.03] md:block">
             <div className="relative h-28 w-28">
               <Image
                 src="/images/vu-age-watermark.png"
@@ -40,13 +40,13 @@ function SuccessInner() {
           </div>
         </div>
 
-        <div className="relative border-b border-black/8 bg-gradient-to-b from-[#fff7f7] via-[#fffafa] to-[#fefefe] px-6 py-12 md:px-10 md:py-14">
+        <div className="relative border-b border-black/8 bg-gradient-to-b from-[#f6fffb] via-[#fbfffd] to-[#fefefe] px-6 py-12 md:px-10 md:py-14">
           <div className="mx-auto max-w-3xl text-center">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[#a30105]/10 ring-1 ring-[#a30105]/10 shadow-[0_14px_40px_rgba(163,1,5,0.10)]">
-              <CheckCircle2 className="h-10 w-10 text-[#a30105]" />
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/10 ring-1 ring-emerald-500/15 shadow-[0_14px_40px_rgba(16,185,129,0.12)]">
+              <CheckCircle2 className="h-10 w-10 text-emerald-600" />
             </div>
 
-            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-[#a30105]">
+            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
               Order Confirmed
             </p>
 
@@ -61,10 +61,10 @@ function SuccessInner() {
             </p>
 
             {so ? (
-              <div className="mt-7 inline-flex items-center rounded-2xl border border-[#a30105]/15 bg-[#a30105]/[0.05] px-4 py-3 text-sm font-semibold text-black shadow-[0_8px_24px_rgba(163,1,5,0.06)]">
+              <div className="mt-7 inline-flex items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-black shadow-[0_8px_24px_rgba(16,185,129,0.05)]">
                 <span className="text-black/60">Sales Order</span>
                 <span className="mx-2 text-black/25">•</span>
-                <span className="text-[#a30105]">{so}</span>
+                <span className="text-emerald-700">{so}</span>
               </div>
             ) : null}
           </div>
@@ -74,8 +74,8 @@ function SuccessInner() {
           <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl border border-black/8 bg-black/[0.02] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.02)]">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#a30105]/8">
-                  <FileText className="h-5 w-5 text-[#a30105]" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10">
+                  <FileText className="h-5 w-5 text-emerald-600" />
                 </div>
                 <div className="text-sm font-semibold text-black">Order Status</div>
               </div>
@@ -86,8 +86,8 @@ function SuccessInner() {
 
             <div className="rounded-2xl border border-black/8 bg-black/[0.02] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.02)]">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#a30105]/8">
-                  <CreditCard className="h-5 w-5 text-[#a30105]" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10">
+                  <CreditCard className="h-5 w-5 text-emerald-600" />
                 </div>
                 <div className="text-sm font-semibold text-black">Payment Method</div>
               </div>
@@ -98,8 +98,8 @@ function SuccessInner() {
 
             <div className="rounded-2xl border border-black/8 bg-black/[0.02] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.02)]">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#a30105]/8">
-                  <Headphones className="h-5 w-5 text-[#a30105]" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10">
+                  <Headphones className="h-5 w-5 text-emerald-600" />
                 </div>
                 <div className="text-sm font-semibold text-black">Next Step</div>
               </div>
@@ -109,7 +109,7 @@ function SuccessInner() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-[#a30105]/12 bg-gradient-to-r from-[#fff7f7] to-[#fffafa] p-5 shadow-[0_8px_24px_rgba(163,1,5,0.03)]">
+          <div className="mt-6 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-[#f8fffc] p-5 shadow-[0_8px_24px_rgba(16,185,129,0.04)]">
             <p className="text-sm leading-7 text-black/70">
               Please keep your phone available after placing the order. For Cash on Delivery,
               our team may confirm order details before final processing.

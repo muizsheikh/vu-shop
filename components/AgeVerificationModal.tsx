@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { ShieldCheck, TriangleAlert } from "lucide-react";
 import useAgeVerification from "@/hooks/useAgeVerification";
 
@@ -37,21 +36,6 @@ export default function AgeVerificationModal() {
           </div>
 
           <div className="relative border-b border-black/8 bg-gradient-to-b from-[#fff5f5] to-[#fefefe] px-6 py-7 sm:px-8 sm:py-8">
-            <div className="mb-5 flex justify-center">
-              <div className="relative rounded-full border border-[#a30105]/10 bg-white/80 px-5 py-3 shadow-[0_10px_30px_rgba(163,1,5,0.06)] backdrop-blur-sm">
-                <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,_rgba(163,1,5,0.06),_transparent_70%)]" />
-                <div className="relative h-12 w-[150px] sm:h-14 sm:w-[180px]">
-                  <Image
-                    src="/images/vu-age-watermark.png"
-                    alt="Vape Ustad"
-                    fill
-                    className="object-contain"
-                    priority
-                  />
-                </div>
-              </div>
-            </div>
-
             <div className="mb-4 flex justify-center">
               <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#a30105]/8 ring-1 ring-[#a30105]/10">
                 <ShieldCheck className="h-7 w-7 text-[#a30105]" />
