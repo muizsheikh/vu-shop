@@ -482,7 +482,7 @@ export default function CheckoutPage() {
               <button
                 onClick={handleCOD}
                 disabled={loading || cartEmpty}
-                className="mt-5 inline-flex min-h-[54px] w-full items-center justify-center rounded-2xl bg-vu-red px-6 py-3 text-base font-semibold text-white transition hover:opacity-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-5 inline-flex min-h-[54px] w-full items-center justify-center rounded-2xl bg-[#a30105] px-6 py-3 text-base font-semibold text-white shadow-[0_10px_30px_rgba(163,1,5,0.2)] transition hover:bg-[#8e0104] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading ? "Placing order..." : "Place Cash on Delivery Order"}
               </button>

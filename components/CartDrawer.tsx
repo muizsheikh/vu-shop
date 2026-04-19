@@ -63,7 +63,7 @@ export default function CartDrawer() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex h-10 items-center justify-center rounded-2xl bg-vu-red px-4 py-2 text-sm font-semibold text-white transition hover:opacity-95 active:scale-[0.98]"
+        className="inline-flex h-10 items-center justify-center rounded-2xl bg-[#a30105] px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(163,1,5,0.18)] transition hover:bg-[#8e0104] active:scale-[0.98]"
       >
         Cart ({cartCount})
       </button>
@@ -114,7 +114,7 @@ export default function CartDrawer() {
                   <Link
                     href="/products"
                     onClick={() => setOpen(false)}
-                    className="mt-5 inline-flex min-h-[46px] items-center justify-center rounded-2xl bg-vu-red px-5 py-3 text-sm font-semibold text-white transition hover:opacity-95"
+                    className="mt-5 inline-flex min-h-[46px] items-center justify-center rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(163,1,5,0.16)] transition hover:bg-[#8e0104]"
                   >
                     Continue Shopping
                   </Link>
@@ -223,7 +223,7 @@ export default function CartDrawer() {
                   className={`inline-flex min-h-[48px] flex-1 items-center justify-center rounded-2xl px-4 py-3 text-center text-sm font-semibold text-white transition ${
                     cartEmpty
                       ? "pointer-events-none bg-neutral-300"
-                      : "bg-vu-red hover:opacity-95"
+                      : "bg-[#a30105] shadow-[0_8px_24px_rgba(163,1,5,0.16)] hover:bg-[#8e0104]"
                   }`}
                 >
                   Checkout

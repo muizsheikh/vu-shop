@@ -8,7 +8,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        "vu-red": "#e50914",
+        "vu-red": "#a30105",
         "vu-black": "#0a0a0a",
       },
     },
