@@ -45,7 +45,7 @@ function getStockMeta(
   if (isOutOfStock) {
     return {
       label: "Out of Stock",
-      badgeClassName: "border-red-200/90 bg-white/90 text-red-700",
+      badgeClassName: "border-red-200/90 bg-white shadow-sm text-red-700",
       statusClassName: "text-red-600",
       showQty: false,
       qty,
@@ -140,7 +140,7 @@ export default function ProductCard({ p }: { p: ProductCardInput }) {
                 Rs {pricePKR}
               </div>
             ) : (
-              <div className="text-sm font-medium text-neutral-400">Price on request</div>
+              <div className="text-sm font-semibold text-neutral-500 tracking-tight">Price on request</div>
             )}
           </div>
 

@@ -3,6 +3,7 @@ import "@/app/globals.css";
 import Providers from "@/components/Providers";
 import Navbar from "@/components/Navbar";
 import Shortcuts from "@/components/Shortcuts";
+import AgeVerificationModal from "@/components/AgeVerificationModal";
 import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
@@ -36,6 +37,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className="light">
       <body className="bg-[#fefefe] text-black">
         <Providers>
+          <AgeVerificationModal />
           <Navbar />
           <main className="mx-auto max-w-[1200px] bg-[#fefefe] px-4 py-8 text-black">
             {children}
