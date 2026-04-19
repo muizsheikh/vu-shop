@@ -2,10 +2,21 @@ import Stripe from "stripe";
 
 const DEFAULT_CURRENCY = "PKR";
 const DEFAULT_COUNTRY = "Pakistan";
-const DEFAULT_CUSTOMER_GROUP =
-  process.env.ERP_CUSTOMER_GROUP || "All Customer Groups";
-const DEFAULT_TERRITORY =
-  process.env.ERP_TERRITORY || "All Territories";
+
+const PREFERRED_CUSTOMER_GROUPS = [
+  process.env.ERP_CUSTOMER_GROUP || "",
+  "All Customer Groups",
+  "All Customers",
+  "Commercial",
+  "Individual",
+  "Retail",
+].filter(Boolean);
+
+const PREFERRED_TERRITORIES = [
+  process.env.ERP_TERRITORY || "",
+  "All Territories",
+  "Pakistan",
+].filter(Boolean);
 
 function normBase(u: string) {
   let x = (u || "").trim();
@@ -133,6 +144,73 @@ type StripePushParams = {
   } | null;
 };
 
+/* ---------- Dynamic ERP link resolution ---------- */
+async function getDoctypeList(
+  doctype: string,
+  fields: string[] = ["name"],
+  limit = 100
+) {
+  const json = await erpFetch(
+    `${doctype}?fields=${enc(fields)}&limit_page_length=${limit}`
+  );
+  return Array.isArray(json?.data) ? json.data : [];
+}
+
+async function resolvePreferredLinkName(args: {
+  doctype: string;
+  preferredNames: string[];
+  preferNonGroup?: boolean;
+}) {
+  const rows = await getDoctypeList(args.doctype, ["name", "is_group"], 200);
+
+  if (!rows.length) {
+    throw new Error(`No records found in ERP doctype: ${args.doctype}`);
+  }
+
+  for (const preferred of args.preferredNames) {
+    const exact = rows.find(
+      (row: any) => String(row?.name || "").trim() === preferred
+    );
+    if (exact) return exact.name;
+  }
+
+  if (args.preferNonGroup) {
+    const nonGroup = rows.find((row: any) => Number(row?.is_group || 0) !== 1);
+    if (nonGroup?.name) return nonGroup.name;
+  }
+
+  if (rows[0]?.name) return rows[0].name;
+
+  throw new Error(`Could not resolve valid ${args.doctype} from ERP`);
+}
+
+let customerGroupCache: string | null = null;
+let territoryCache: string | null = null;
+
+async function getResolvedCustomerGroup() {
+  if (customerGroupCache) return customerGroupCache;
+
+  customerGroupCache = await resolvePreferredLinkName({
+    doctype: "Customer Group",
+    preferredNames: PREFERRED_CUSTOMER_GROUPS,
+    preferNonGroup: true,
+  });
+
+  return customerGroupCache;
+}
+
+async function getResolvedTerritory() {
+  if (territoryCache) return territoryCache;
+
+  territoryCache = await resolvePreferredLinkName({
+    doctype: "Territory",
+    preferredNames: PREFERRED_TERRITORIES,
+    preferNonGroup: true,
+  });
+
+  return territoryCache;
+}
+
 /* ---------- Customer ---------- */
 export async function findCustomerByEmail(email: string) {
   const filters = enc([["email_id", "=", email]]);
@@ -150,11 +228,14 @@ export async function createCustomer(payload: {
   email: string;
   phone?: string;
 }) {
+  const customerGroup = await getResolvedCustomerGroup();
+  const territory = await getResolvedTerritory();
+
   const body: Record<string, unknown> = {
     customer_name: payload.name || payload.email.split("@")[0],
     customer_type: "Individual",
-    customer_group: DEFAULT_CUSTOMER_GROUP,
-    territory: DEFAULT_TERRITORY,
+    customer_group: customerGroup,
+    territory,
     email_id: payload.email,
   };
 
@@ -446,7 +527,7 @@ export async function pushStripeOrderToERP(params: StripePushParams) {
     stripe_session_id: params.session_id || undefined,
     note: ["Website Stripe Order", "", ...noteLines].join("\n"),
     items,
-    shipping_address_name,
+    shipping_address_name: shippingAddressName,
   });
 
   return {
