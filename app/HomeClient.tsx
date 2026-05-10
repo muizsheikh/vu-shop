@@ -51,6 +51,7 @@ function HeroSlider() {
     "/images/banners/banner3.jpg",
     "/images/banners/banner4.jpg",
     "/images/banners/banner5.jpg",
+    "/images/banners/banner6.jpg",
   ].filter(Boolean);
 
   const [index, setIndex] = useState(0);
@@ -262,7 +263,7 @@ function TrendingCollageSection() {
       delay: "320ms",
     },
     {
-      src: "/images/banners/banner2.jpg",
+      src: "/images/banners/banner6.jpg",
       alt: "Trending showcase 6",
       posClass:
         "right-[0%] bottom-[18%] h-[150px] w-[130px] rounded-[24px] sm:right-[2%] sm:h-[190px] sm:w-[170px] lg:h-[230px] lg:w-[220px]",
