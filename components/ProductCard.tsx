@@ -34,40 +34,26 @@ function stripHtml(html?: string | null) {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function getStockMeta(
+function getAvailabilityMeta(
   stockQty?: number | null,
   stock?: number | null,
   inStock?: boolean
 ) {
   const qty = Number(stockQty ?? stock ?? 0);
-  const isOutOfStock = inStock === false || qty <= 0;
+  const unavailable = inStock === false || qty <= 0;
 
-  if (isOutOfStock) {
+  if (unavailable) {
     return {
-      label: "Out of Stock",
+      label: "Unavailable",
       badgeClassName: "border-red-200/90 bg-white shadow-sm text-red-700",
       statusClassName: "text-red-600",
-      showQty: false,
-      qty,
-    };
-  }
-
-  if (qty > 0 && qty <= 5) {
-    return {
-      label: "Low Stock",
-      badgeClassName: "border-amber-200/90 bg-white/90 text-amber-700",
-      statusClassName: "text-amber-600",
-      showQty: true,
-      qty,
     };
   }
 
   return {
-    label: "In Stock",
+    label: "Available",
     badgeClassName: "border-emerald-200/90 bg-white/90 text-emerald-700",
     statusClassName: "text-emerald-600",
-    showQty: true,
-    qty,
   };
 }
 
@@ -78,7 +64,7 @@ export default function ProductCard({ p }: { p: ProductCardInput }) {
   const pricePKR =
     p.price != null ? new Intl.NumberFormat("en-PK").format(p.price) : null;
 
-  const stockMeta = getStockMeta(p.stock_qty, p.stock, p.in_stock);
+  const availability = getAvailabilityMeta(p.stock_qty, p.stock, p.in_stock);
   const cleanDescription = stripHtml(p.description);
 
   return (
@@ -94,9 +80,9 @@ export default function ProductCard({ p }: { p: ProductCardInput }) {
         />
 
         <div
-          className={`absolute left-3 top-3 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] shadow-sm backdrop-blur ${stockMeta.badgeClassName}`}
+          className={`absolute left-3 top-3 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] shadow-sm backdrop-blur ${availability.badgeClassName}`}
         >
-          {stockMeta.label}
+          {availability.label}
         </div>
       </div>
 
@@ -140,19 +126,15 @@ export default function ProductCard({ p }: { p: ProductCardInput }) {
                 Rs {pricePKR}
               </div>
             ) : (
-              <div className="text-sm font-semibold text-neutral-500 tracking-tight">Price on request</div>
+              <div className="text-sm font-semibold tracking-tight text-neutral-500">
+                Price on request
+              </div>
             )}
           </div>
 
-          {stockMeta.showQty ? (
-            <div className={`text-xs font-semibold ${stockMeta.statusClassName}`}>
-              {stockMeta.qty} in stock
-            </div>
-          ) : (
-            <div className="text-xs font-semibold text-red-600">
-              Currently unavailable
-            </div>
-          )}
+          <div className={`text-xs font-semibold ${availability.statusClassName}`}>
+            {availability.label}
+          </div>
         </div>
       </div>
     </Link>
