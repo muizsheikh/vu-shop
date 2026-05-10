@@ -79,11 +79,7 @@ export default function ProductCard({ p }: { p: ProductCardInput }) {
           className="h-44 w-full object-cover transition duration-500 group-hover:scale-[1.03] sm:h-52 md:h-56"
         />
 
-        <div
-          className={`absolute left-3 top-3 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] shadow-sm backdrop-blur ${availability.badgeClassName}`}
-        >
-          {availability.label}
-        </div>
+        
       </div>
 
       <div className="space-y-3 p-3.5 md:p-4">
