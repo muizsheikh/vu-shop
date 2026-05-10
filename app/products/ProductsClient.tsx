@@ -705,10 +705,10 @@ function ProductsInner() {
           ) : (
             <>
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-                {sorted.map((p) => (
-                  <ProductCard key={p.id} p={p} />
-                ))}
-              </div>
+  {sorted.map((p, index) => (
+    <ProductCard key={`${p.id || p.slug || p.name}-${index}`} p={p} />
+  ))}
+</div>
 
               {totalPages > 1 ? (
                 <div className="mt-8 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:p-5">
