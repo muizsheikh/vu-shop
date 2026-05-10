@@ -5,6 +5,7 @@ import Navbar from "@/components/Navbar";
 import Shortcuts from "@/components/Shortcuts";
 import AgeVerificationModal from "@/components/AgeVerificationModal";
 import { Toaster } from "sonner";
+import MobileBottomNav from "@/components/MobileBottomNav";
 
 const SITE_URL = "https://vapeustad.com";
 const SITE_NAME = "Vape Ustad";
@@ -85,10 +86,11 @@ export default function RootLayout({
         <Providers>
           <AgeVerificationModal />
           <Navbar />
-          <main className="mx-auto max-w-[1200px] bg-[#fefefe] px-4 py-8 text-black">
+          <main className="mx-auto max-w-[1200px] bg-[#fefefe] px-4 pb-24 pt-8 text-black md:pb-8">
             {children}
           </main>
           <Shortcuts />
+          <MobileBottomNav />
           <Toaster richColors position="top-center" closeButton />
         </Providers>
       </body>

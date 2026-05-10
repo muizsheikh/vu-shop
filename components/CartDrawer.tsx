@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ShoppingCart } from "lucide-react";
+import { toast } from "sonner";
 import { useCartStore } from "@/store/cart";
+import { supabase } from "@/lib/supabaseClient";
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -23,10 +26,12 @@ function formatPKR(value: number) {
 }
 
 export default function CartDrawer() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const { items, inc, dec, remove, clear, total, count } = useCartStore();
 
   const [ready, setReady] = useState(false);
+  const [checkingCheckout, setCheckingCheckout] = useState(false);
 
   useEffect(() => setReady(true), []);
 
@@ -60,16 +65,40 @@ export default function CartDrawer() {
   const cartTotal = useMemo(() => Number(total() || 0), [total]);
   const cartEmpty = items.length === 0;
 
+  async function goToCheckout() {
+    if (cartEmpty) return;
+
+    setCheckingCheckout(true);
+
+    try {
+      const { data } = await supabase.auth.getUser();
+
+      setOpen(false);
+
+      if (!data.user) {
+        toast.message("Checkout ke liay login required hai.");
+        router.push("/account/login?next=/checkout");
+        return;
+      }
+
+      router.push("/checkout");
+    } catch {
+      toast.error("Unable to check login. Please try again.");
+    } finally {
+      setCheckingCheckout(false);
+    }
+  }
+
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex h-11 items-center gap-2 rounded-2xl border border-[#a30105]/15 bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 shadow-[0_8px_24px_rgba(0,0,0,0.05)] transition hover:bg-[#fff7f7] hover:border-[#a30105]/25 active:scale-[0.98]"
+        className="inline-flex h-11 items-center gap-2 rounded-2xl border border-[#a30105]/15 bg-white px-3.5 py-2 text-sm font-semibold text-neutral-900 shadow-[0_8px_24px_rgba(0,0,0,0.05)] transition hover:border-[#a30105]/25 hover:bg-[#fff7f7] active:scale-[0.98]"
       >
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#a30105]/10 text-[#a30105]">
           <ShoppingCart className="h-4.5 w-4.5" />
         </span>
-                <span className="inline-flex min-w-[26px] items-center justify-center rounded-full bg-[#a30105] px-2 py-0.5 text-xs font-bold text-white">
+        <span className="inline-flex min-w-[26px] items-center justify-center rounded-full bg-[#a30105] px-2 py-0.5 text-xs font-bold text-white">
           {cartCount}
         </span>
       </button>
@@ -91,7 +120,9 @@ export default function CartDrawer() {
                   <p className="mt-1 text-sm text-neutral-500">
                     {cartEmpty
                       ? "No items added yet"
-                      : `${cartCount} item${cartCount > 1 ? "s" : ""} in your cart`}
+                      : `${cartCount} item${
+                          cartCount > 1 ? "s" : ""
+                        } in your cart`}
                   </p>
                 </div>
 
@@ -120,7 +151,7 @@ export default function CartDrawer() {
                   <Link
                     href="/products"
                     onClick={() => setOpen(false)}
-                    className="mt-5 inline-flex min-h-[46px] items-center justify-center rounded-2xl border border-[#a30105]/15 bg-white px-5 py-3 text-sm font-semibold text-neutral-900 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:bg-[#fff7f7] hover:border-[#a30105]/25"
+                    className="mt-5 inline-flex min-h-[46px] items-center justify-center rounded-2xl border border-[#a30105]/15 bg-white px-5 py-3 text-sm font-semibold text-neutral-900 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
                   >
                     Continue Shopping
                   </Link>
@@ -223,22 +254,22 @@ export default function CartDrawer() {
                   Clear Cart
                 </button>
 
-                <Link
-                  href="/checkout"
-                  onClick={() => setOpen(false)}
+                <button
+                  onClick={goToCheckout}
+                  disabled={cartEmpty || checkingCheckout}
                   className={`inline-flex min-h-[48px] flex-1 items-center justify-center rounded-2xl px-4 py-3 text-center text-sm font-semibold transition ${
                     cartEmpty
-                      ? "pointer-events-none bg-neutral-300 text-white"
-                      : "border border-[#a30105]/15 bg-white text-neutral-900 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:bg-[#fff7f7] hover:border-[#a30105]/25"
+                      ? "cursor-not-allowed bg-neutral-300 text-white"
+                      : "border border-[#a30105]/15 bg-white text-neutral-900 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
                   }`}
                 >
-                  Checkout
-                </Link>
+                  {checkingCheckout ? "Checking..." : "Checkout"}
+                </button>
               </div>
 
               <div className="mt-4 grid gap-2">
                 <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
-                  Fast checkout, clean order summary, and COD support.
+                  Login required checkout with saved customer details.
                 </div>
 
                 <Link

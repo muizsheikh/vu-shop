@@ -10,8 +10,13 @@ import {
   FileText,
   Headphones,
   House,
+  MessageCircle,
+  PackageCheck,
   ShoppingBag,
+  UserRound,
 } from "lucide-react";
+
+const WHATSAPP_NUMBER = "923015554249";
 
 function SuccessInner() {
   const params = useSearchParams();
@@ -19,6 +24,14 @@ function SuccessInner() {
   const so = params.get("so") || "";
 
   const isCOD = method === "cod";
+
+  const whatsappMessage = encodeURIComponent(
+    `Assalam o Alaikum, mera Vape Ustad order place ho gaya hai${
+      so ? `.\nSales Order: ${so}` : ""
+    }.\nMujhe is order ke bare me help chahiye.`
+  );
+
+  const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${whatsappMessage}`;
 
   return (
     <section className="mx-auto max-w-[1200px] px-4 py-10 md:px-6 md:py-14">
@@ -56,12 +69,12 @@ function SuccessInner() {
 
             <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-black/65 md:text-base">
               {isCOD
-                ? "Your Cash on Delivery order has been placed successfully and saved in our ERP system for manual review."
+                ? "Your Cash on Delivery order has been placed successfully. Our team will review and process it soon."
                 : "Your order has been placed successfully and has been received by our team."}
             </p>
 
             {so ? (
-              <div className="mt-7 inline-flex items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-black shadow-[0_8px_24px_rgba(16,185,129,0.05)]">
+              <div className="mt-7 inline-flex flex-wrap items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-black shadow-[0_8px_24px_rgba(16,185,129,0.05)]">
                 <span className="text-black/60">Sales Order</span>
                 <span className="mx-2 text-black/25">•</span>
                 <span className="text-emerald-700">{so}</span>
@@ -75,12 +88,14 @@ function SuccessInner() {
             <div className="rounded-2xl border border-black/8 bg-black/[0.02] p-5 shadow-[0_8px_24px_rgba(0,0,0,0.02)]">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10">
-                  <FileText className="h-5 w-5 text-emerald-600" />
+                  <PackageCheck className="h-5 w-5 text-emerald-600" />
                 </div>
-                <div className="text-sm font-semibold text-black">Order Status</div>
+                <div className="text-sm font-semibold text-black">
+                  Order Status
+                </div>
               </div>
               <div className="mt-3 text-sm leading-6 text-black/65">
-                Draft in ERP for review and processing by our team.
+                Order placed successfully and saved in your account order history.
               </div>
             </div>
 
@@ -89,7 +104,9 @@ function SuccessInner() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10">
                   <CreditCard className="h-5 w-5 text-emerald-600" />
                 </div>
-                <div className="text-sm font-semibold text-black">Payment Method</div>
+                <div className="text-sm font-semibold text-black">
+                  Payment Method
+                </div>
               </div>
               <div className="mt-3 text-sm leading-6 text-black/65">
                 {isCOD ? "Cash on Delivery" : "Order received successfully"}
@@ -101,44 +118,59 @@ function SuccessInner() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10">
                   <Headphones className="h-5 w-5 text-emerald-600" />
                 </div>
-                <div className="text-sm font-semibold text-black">Next Step</div>
+                <div className="text-sm font-semibold text-black">
+                  Next Step
+                </div>
               </div>
               <div className="mt-3 text-sm leading-6 text-black/65">
-                Our team will review your order and contact you if anything is needed.
+                Our team may contact you to confirm details before processing.
               </div>
             </div>
           </div>
 
           <div className="mt-6 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-[#f8fffc] p-5 shadow-[0_8px_24px_rgba(16,185,129,0.04)]">
-            <p className="text-sm leading-7 text-black/70">
-              Please keep your phone available after placing the order. For Cash on Delivery,
-              our team may confirm order details before final processing.
-            </p>
+            <div className="flex gap-3">
+              <FileText className="mt-1 h-5 w-5 shrink-0 text-emerald-600" />
+              <p className="text-sm leading-7 text-black/70">
+                Please keep your phone available. For Cash on Delivery orders,
+                our team may confirm order details before final processing.
+              </p>
+            </div>
           </div>
 
-          <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row">
+          <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Link
+              href="/account"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#a30105] px-6 py-3 font-semibold text-white shadow-[0_12px_30px_rgba(163,1,5,0.18)] transition duration-200 hover:-translate-y-[1px] hover:bg-[#8e0104]"
+            >
+              <UserRound className="h-4 w-4" />
+              My Orders
+            </Link>
+
             <Link
               href="/products"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#a30105] px-6 py-3 font-semibold text-white shadow-[0_12px_30px_rgba(163,1,5,0.18)] transition duration-200 hover:-translate-y-[1px] hover:bg-[#8e0104]"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-black/10 bg-white px-6 py-3 font-semibold text-black transition duration-200 hover:bg-black/[0.03]"
             >
               <ShoppingBag className="h-4 w-4" />
               Continue Shopping
             </Link>
+
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-3 font-semibold text-emerald-700 transition duration-200 hover:bg-emerald-100"
+            >
+              <MessageCircle className="h-4 w-4" />
+              WhatsApp
+            </a>
 
             <Link
               href="/"
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-black/10 bg-white px-6 py-3 font-semibold text-black transition duration-200 hover:bg-black/[0.03]"
             >
               <House className="h-4 w-4" />
-              Back to Home
-            </Link>
-
-            <Link
-              href="/contact"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-black/10 bg-white px-6 py-3 font-semibold text-black transition duration-200 hover:bg-black/[0.03]"
-            >
-              <Headphones className="h-4 w-4" />
-              Need Help?
+              Home
             </Link>
           </div>
         </div>

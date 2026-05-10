@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ShoppingCart } from "lucide-react";
+import { AlertCircle, CheckCircle2, Edit3, ShoppingCart, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/store/cart";
+import { supabase } from "@/lib/supabaseClient";
 
 type ApiError = {
   error?: string;
@@ -18,7 +20,12 @@ type FormErrors = {
   city?: string;
 };
 
-const CUSTOMER_INFO_KEY = "vu_checkout_customer_info";
+type Profile = {
+  full_name: string | null;
+  phone: string | null;
+  city: string | null;
+  address_line1: string | null;
+};
 
 function formatPKR(value: number) {
   return new Intl.NumberFormat("en-PK").format(Number(value || 0));
@@ -45,13 +52,8 @@ function normalizePkPhone(value: string) {
 
   const digits = raw.replace(/\D/g, "");
 
-  if (digits.startsWith("0")) {
-    return digits;
-  }
-
-  if (digits.startsWith("3")) {
-    return `0${digits}`;
-  }
+  if (digits.startsWith("0")) return digits;
+  if (digits.startsWith("3")) return `0${digits}`;
 
   return digits;
 }
@@ -65,8 +67,10 @@ export default function CheckoutClient() {
   const router = useRouter();
   const { items, total, clear } = useCartStore();
 
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(false);
 
+  const [userId, setUserId] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -80,39 +84,42 @@ export default function CheckoutClient() {
   const totalValue = useMemo(() => Number(total() || 0), [total]);
   const totalPKR = useMemo(() => formatPKR(totalValue), [totalValue]);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(CUSTOMER_INFO_KEY);
-      if (!raw) return;
-
-      const saved = JSON.parse(raw);
-
-      setName(saved?.name || "");
-      setEmail(saved?.email || "");
-      setPhone(saved?.phone || "");
-      setAddress(saved?.address || "");
-      setCity(saved?.city || "");
-    } catch {
-      // ignore localStorage parse issues
-    }
-  }, []);
+  const profileIncomplete =
+    !name.trim() || !phone.trim() || !address.trim() || !city.trim();
 
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        CUSTOMER_INFO_KEY,
-        JSON.stringify({
-          name,
-          email,
-          phone,
-          address,
-          city,
-        })
-      );
-    } catch {
-      // ignore localStorage write issues
+    async function loadCustomerProfile() {
+      setCheckingAuth(true);
+
+      const { data: userData } = await supabase.auth.getUser();
+      const user = userData.user;
+
+      if (!user) {
+        router.replace("/account/login?next=/checkout");
+        return;
+      }
+
+      setUserId(user.id);
+      setEmail(user.email || "");
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, phone, city, address_line1")
+        .eq("id", user.id)
+        .single();
+
+      const p = profile as Profile | null;
+
+      setName(p?.full_name || "");
+      setPhone(p?.phone || "");
+      setCity(p?.city || "");
+      setAddress(p?.address_line1 || "");
+
+      setCheckingAuth(false);
     }
-  }, [name, email, phone, address, city]);
+
+    loadCustomerProfile();
+  }, [router]);
 
   const validate = () => {
     const nextErrors: FormErrors = {};
@@ -122,9 +129,7 @@ export default function CheckoutClient() {
       return false;
     }
 
-    if (!name.trim()) {
-      nextErrors.name = "Full name is required";
-    }
+    if (!name.trim()) nextErrors.name = "Full name is required";
 
     if (!email.trim()) {
       nextErrors.email = "Email is required";
@@ -138,13 +143,8 @@ export default function CheckoutClient() {
       nextErrors.phone = "Enter a valid Pakistan mobile number";
     }
 
-    if (!address.trim()) {
-      nextErrors.address = "Address is required";
-    }
-
-    if (!city.trim()) {
-      nextErrors.city = "City is required";
-    }
+    if (!address.trim()) nextErrors.address = "Address is required";
+    if (!city.trim()) nextErrors.city = "City is required";
 
     setErrors(nextErrors);
 
@@ -157,12 +157,29 @@ export default function CheckoutClient() {
     return true;
   };
 
+  const saveProfileChanges = async () => {
+    if (!userId) return;
+
+    await supabase
+      .from("profiles")
+      .update({
+        full_name: name.trim(),
+        phone: normalizePkPhone(phone),
+        city: city.trim(),
+        address_line1: address.trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", userId);
+  };
+
   const handleCOD = async () => {
     if (!validate()) return;
 
     setLoading(true);
 
     try {
+      await saveProfileChanges();
+
       const normalizedPhone = normalizePkPhone(phone);
 
       const payload = {
@@ -199,6 +216,27 @@ export default function CheckoutClient() {
         return;
       }
 
+      await supabase.from("orders").insert({
+        user_id: userId,
+        sales_order: data.so || null,
+        payment_method: "cod",
+        status: "placed",
+        total_amount: totalValue,
+        currency: "PKR",
+        customer_name: name.trim(),
+        customer_email: email.trim(),
+        customer_phone: normalizedPhone,
+        city: city.trim(),
+        address_line1: address.trim(),
+        items: items.map((it) => ({
+          id: it.id,
+          name: it.name,
+          qty: it.qty,
+          price: it.price,
+          image: it.image || null,
+        })),
+      });
+
       clear();
       toast.success(
         `Order placed successfully — ${data.so || "Sales Order created"}`
@@ -224,6 +262,19 @@ export default function CheckoutClient() {
         : "border-neutral-200 focus:border-neutral-300 focus:ring-4 focus:ring-neutral-100"
     }`;
 
+  if (checkingAuth) {
+    return (
+      <div className="mx-auto max-w-md rounded-[28px] border border-neutral-200 bg-white p-6 text-center shadow-sm">
+        <div className="text-lg font-black text-neutral-950">
+          Checking account...
+        </div>
+        <p className="mt-2 text-sm text-neutral-500">
+          Checkout ke liay login verify ho raha hai.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 md:px-6 md:py-10">
       <div className="mb-8">
@@ -231,25 +282,64 @@ export default function CheckoutClient() {
           Checkout
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-600 md:text-base">
-          Complete your order with a smooth and secure checkout experience.
-          Cash on Delivery is currently active for this order.
+          Complete your order with saved account details and Cash on Delivery.
         </p>
+      </div>
+
+      <div className="mb-6 rounded-[26px] border border-neutral-200 bg-white p-4 shadow-[0_16px_45px_rgba(0,0,0,0.05)] md:p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#a30105]/10 text-[#a30105]">
+              <UserRound className="h-5 w-5" />
+            </div>
+
+            <div>
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#a30105]">
+                Logged In Checkout
+              </div>
+              <div className="mt-1 text-lg font-black text-neutral-950">
+                {name || "Customer"}
+              </div>
+              <div className="mt-1 text-sm text-neutral-500">{email}</div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-2 rounded-2xl border border-green-200 bg-green-50 px-4 py-2 text-sm font-bold text-green-700">
+              <CheckCircle2 className="h-4 w-4" />
+              Saved account
+            </span>
+
+            <Link
+              href="/account/profile"
+              className="inline-flex items-center gap-2 rounded-2xl border border-[#a30105]/15 bg-white px-4 py-2 text-sm font-bold text-neutral-900 transition hover:bg-[#fff7f7]"
+            >
+              <Edit3 className="h-4 w-4 text-[#a30105]" />
+              Edit Profile
+            </Link>
+          </div>
+        </div>
+
+        {profileIncomplete ? (
+          <div className="mt-4 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <div className="font-bold">Profile details need attention</div>
+              <div className="mt-1">
+                Please complete phone, city and address before placing order.
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">
+            Your saved profile details are loaded below. You can update them here
+            and they will be saved for future checkout.
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
         <div className="rounded-[28px] border border-neutral-200 bg-white p-5 shadow-[0_20px_60px_rgba(0,0,0,0.06)] md:p-7">
-          <div className="mb-6 flex flex-wrap items-center gap-3">
-            <span className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-red-700">
-              Checkout
-            </span>
-            <span className="text-sm text-neutral-500">
-              Payment method:{" "}
-              <span className="font-semibold text-neutral-900">
-                Cash on Delivery
-              </span>
-            </span>
-          </div>
-
           <div className="mb-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
             <div className="mb-3 text-sm font-semibold text-neutral-900">
               Payment Options
@@ -308,19 +398,14 @@ export default function CheckoutClient() {
                 </label>
                 <input
                   value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (errors.email) {
-                      setErrors((prev) => ({ ...prev, email: undefined }));
-                    }
-                  }}
+                  disabled
                   placeholder="you@example.com"
                   type="email"
-                  className={inputClass(errors.email)}
+                  className="w-full cursor-not-allowed rounded-2xl border border-neutral-200 bg-neutral-100 px-4 py-3.5 text-[15px] text-neutral-500 outline-none"
                 />
-                {errors.email ? (
-                  <p className="mt-2 text-sm text-red-600">{errors.email}</p>
-                ) : null}
+                <p className="mt-2 text-xs text-neutral-500">
+                  Email account se linked hai.
+                </p>
               </div>
 
               <div>
@@ -385,35 +470,6 @@ export default function CheckoutClient() {
                 {errors.city ? (
                   <p className="mt-2 text-sm text-red-600">{errors.city}</p>
                 ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-              <div className="text-sm font-semibold text-neutral-900">
-                Secure Order Flow
-              </div>
-              <div className="mt-1 text-sm text-neutral-600">
-                Smooth checkout with safe order creation.
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-              <div className="text-sm font-semibold text-neutral-900">
-                Cash on Delivery
-              </div>
-              <div className="mt-1 text-sm text-neutral-600">
-                Convenient payment on delivery.
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-              <div className="text-sm font-semibold text-neutral-900">
-                Saved Details
-              </div>
-              <div className="mt-1 text-sm text-neutral-600">
-                Your checkout info is auto-filled next time.
               </div>
             </div>
           </div>
@@ -483,19 +539,20 @@ export default function CheckoutClient() {
               <button
                 onClick={handleCOD}
                 disabled={loading || cartEmpty}
-                className="mt-5 inline-flex min-h-[54px] w-full items-center justify-center gap-3 rounded-2xl border border-[#a30105]/15 bg-white px-6 py-3 text-base font-semibold text-neutral-900 shadow-[0_10px_30px_rgba(0,0,0,0.05)] transition hover:bg-[#fff7f7] hover:border-[#a30105]/25 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-5 inline-flex min-h-[54px] w-full items-center justify-center gap-3 rounded-2xl border border-[#a30105]/15 bg-white px-6 py-3 text-base font-semibold text-neutral-900 shadow-[0_10px_30px_rgba(0,0,0,0.05)] transition hover:border-[#a30105]/25 hover:bg-[#fff7f7] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#a30105]/10 text-[#a30105]">
                   <ShoppingCart className="h-4.5 w-4.5" />
                 </span>
                 <span>
-                  {loading ? "Placing order..." : "Place Cash on Delivery Order"}
+                  {loading
+                    ? "Placing order..."
+                    : "Place Cash on Delivery Order"}
                 </span>
               </button>
 
               <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
-                By placing this order, you confirm your contact and delivery
-                details are correct.
+                By placing this order, your saved profile details may be updated.
               </p>
             </>
           )}
