@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
+const DELIVERY_CHARGE = 200;
+
 type OrderRow = {
   id: string;
   sales_order: string | null;
@@ -55,7 +57,10 @@ function getStatusLabel(status: string | null) {
   const normalized = normalizeStatus(status);
   const found = STATUS_STEPS.find((s) => s.key === normalized);
   if (found) return found.label;
-  return normalized.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return normalized
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function formatPKR(value: number) {
@@ -71,6 +76,18 @@ function formatDate(value: string) {
   } catch {
     return value;
   }
+}
+
+function getOrderTotals(totalAmount: number | null) {
+  const total = Number(totalAmount || 0);
+  const delivery = total > 0 ? DELIVERY_CHARGE : 0;
+  const subtotal = Math.max(0, total - delivery);
+
+  return {
+    subtotal,
+    delivery,
+    total,
+  };
 }
 
 export default function OrderDetailPage() {
@@ -133,7 +150,9 @@ export default function OrderDetailPage() {
   if (!order) {
     return (
       <div className="mx-auto max-w-md rounded-[28px] border border-neutral-200 bg-white p-6 text-center shadow-sm">
-        <h1 className="text-2xl font-black text-neutral-950">Order Not Found</h1>
+        <h1 className="text-2xl font-black text-neutral-950">
+          Order Not Found
+        </h1>
         <p className="mt-2 text-sm text-neutral-500">
           This order is not available or is not linked with your account.
         </p>
@@ -150,6 +169,7 @@ export default function OrderDetailPage() {
 
   const orderItems = Array.isArray(order.items) ? order.items : [];
   const orderNumber = order.sales_order || `Order ${order.id.slice(0, 8)}`;
+  const totals = getOrderTotals(order.total_amount);
 
   const whatsappMessage = encodeURIComponent(
     `Assalam o Alaikum, mujhe apne Vape Ustad order ke bare me help chahiye.\nOrder: ${orderNumber}`
@@ -360,11 +380,27 @@ export default function OrderDetailPage() {
         </div>
 
         <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
-          <div className="flex items-center justify-between text-sm text-neutral-600">
-            <span>Total Amount</span>
-            <span className="text-xl font-black text-neutral-950">
-              Rs {formatPKR(Number(order.total_amount || 0))}
-            </span>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm text-neutral-600">
+              <span>Subtotal</span>
+              <span>Rs {formatPKR(totals.subtotal)}</span>
+            </div>
+
+            <div className="flex items-center justify-between text-sm text-neutral-600">
+              <span>Delivery Charges</span>
+              <span>Rs {formatPKR(totals.delivery)}</span>
+            </div>
+
+            <div className="border-t border-neutral-200 pt-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-neutral-500">
+                  Total Amount
+                </span>
+                <span className="text-xl font-black text-neutral-950">
+                  Rs {formatPKR(totals.total)}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

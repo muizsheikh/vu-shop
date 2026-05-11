@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
+const DELIVERY_CHARGE = 200;
+
 type Profile = {
   full_name: string | null;
   phone: string | null;
@@ -58,6 +60,18 @@ function getStatusLabel(status: string | null) {
   };
 
   return labels[normalized] || normalized.replaceAll("_", " ");
+}
+
+function getOrderTotals(totalAmount: number | null) {
+  const total = Number(totalAmount || 0);
+  const delivery = total > 0 ? DELIVERY_CHARGE : 0;
+  const subtotal = Math.max(0, total - delivery);
+
+  return {
+    subtotal,
+    delivery,
+    total,
+  };
 }
 
 export default function AccountPage() {
@@ -160,20 +174,20 @@ export default function AccountPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-  <Link
-    href="/account/profile"
-    className="rounded-2xl border border-[#a30105]/15 bg-white px-4 py-2 text-sm font-bold text-neutral-900 transition hover:bg-[#fff7f7]"
-  >
-    Edit Profile
-  </Link>
+            <Link
+              href="/account/profile"
+              className="rounded-2xl border border-[#a30105]/15 bg-white px-4 py-2 text-sm font-bold text-neutral-900 transition hover:bg-[#fff7f7]"
+            >
+              Edit Profile
+            </Link>
 
-  <button
-    onClick={logout}
-    className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2 text-sm font-bold text-neutral-800"
-  >
-    Logout
-  </button>
-</div>
+            <button
+              onClick={logout}
+              className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2 text-sm font-bold text-neutral-800"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -233,6 +247,7 @@ export default function AccountPage() {
           <div className="mt-6 space-y-4">
             {orders.map((order) => {
               const orderItems = Array.isArray(order.items) ? order.items : [];
+              const totals = getOrderTotals(order.total_amount);
 
               return (
                 <div
@@ -282,23 +297,37 @@ export default function AccountPage() {
                     ) : null}
                   </div>
 
-                  <div className="mt-4 flex flex-col gap-3 border-t border-neutral-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-  <div className="flex items-center justify-between gap-4 sm:block">
-    <span className="text-sm font-medium text-neutral-500">
-      Total
-    </span>
-    <div className="text-lg font-black text-neutral-950">
-      Rs {formatPKR(Number(order.total_amount || 0))}
-    </div>
-  </div>
+                  <div className="mt-4 grid gap-2 rounded-2xl border border-neutral-200 bg-white p-3 text-sm">
+                    <div className="flex items-center justify-between text-neutral-500">
+                      <span>Subtotal</span>
+                      <span>Rs {formatPKR(totals.subtotal)}</span>
+                    </div>
 
-  <Link
-    href={`/account/orders/${order.id}`}
-    className="inline-flex items-center justify-center rounded-2xl border border-[#a30105]/15 bg-white px-4 py-2 text-sm font-bold text-neutral-900 transition hover:bg-[#fff7f7]"
-  >
-    View Details
-  </Link>
-</div>
+                    <div className="flex items-center justify-between text-neutral-500">
+                      <span>Delivery Charges</span>
+                      <span>Rs {formatPKR(totals.delivery)}</span>
+                    </div>
+
+                    <div className="border-t border-neutral-200 pt-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-neutral-500">
+                          Total
+                        </span>
+                        <span className="text-lg font-black text-neutral-950">
+                          Rs {formatPKR(totals.total)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex justify-end">
+                    <Link
+                      href={`/account/orders/${order.id}`}
+                      className="inline-flex items-center justify-center rounded-2xl border border-[#a30105]/15 bg-white px-4 py-2 text-sm font-bold text-neutral-900 transition hover:bg-[#fff7f7]"
+                    >
+                      View Details
+                    </Link>
+                  </div>
                 </div>
               );
             })}
