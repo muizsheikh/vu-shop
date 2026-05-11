@@ -10,15 +10,22 @@ import {
   Circle,
   Clock3,
   CreditCard,
+  Loader2,
   MapPin,
-  MessageCircle,
   PackageCheck,
   Phone,
+  ShieldCheck,
   Truck,
   UserRound,
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  getOrderStatusLabel,
+  isAdminEmail,
+  normalizeOrderStatus,
+  ORDER_STATUSES,
+} from "@/lib/admin";
 
 const DELIVERY_CHARGE = 200;
 
@@ -46,53 +53,7 @@ const STATUS_STEPS = [
   { key: "delivered", label: "Delivered", icon: PackageCheck },
 ];
 
-function normalizeStatus(status: string | null) {
-  return String(status || "placed")
-    .trim()
-    .toLowerCase()
-    .replaceAll(" ", "_")
-    .replaceAll("-", "_");
-}
-
-function getStatusLabel(status: string | null) {
-  const normalized = normalizeStatus(status);
-  const found = STATUS_STEPS.find((s) => s.key === normalized);
-
-  if (found) return found.label;
-  if (normalized === "cancelled") return "Cancelled";
-
-  return normalized
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function getStatusBadgeClass(status: string | null) {
-  const normalized = normalizeStatus(status);
-
-  if (normalized === "cancelled") {
-    return "border-red-200 bg-red-50 text-red-700";
-  }
-
-  if (normalized === "delivered") {
-    return "border-green-200 bg-green-50 text-green-700";
-  }
-
-  if (normalized === "out_for_delivery") {
-    return "border-blue-200 bg-blue-50 text-blue-700";
-  }
-
-  if (normalized === "processing") {
-    return "border-amber-200 bg-amber-50 text-amber-700";
-  }
-
-  if (normalized === "confirmed") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  }
-
-  return "border-green-200 bg-green-50 text-green-700";
-}
-
-function formatPKR(value: number) {
+function formatPKR(value: number | null | undefined) {
   return new Intl.NumberFormat("en-PK").format(Number(value || 0));
 }
 
@@ -119,71 +80,188 @@ function getOrderTotals(totalAmount: number | null) {
   };
 }
 
-export default function OrderDetailPage() {
+function getStatusClasses(status: string | null | undefined) {
+  const normalized = normalizeOrderStatus(status);
+
+  if (normalized === "delivered") {
+    return "border-green-200 bg-green-50 text-green-700";
+  }
+
+  if (normalized === "cancelled") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (normalized === "out_for_delivery") {
+    return "border-blue-200 bg-blue-50 text-blue-700";
+  }
+
+  if (normalized === "processing") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+
+  if (normalized === "confirmed") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  return "border-neutral-200 bg-neutral-50 text-neutral-700";
+}
+
+export default function AdminOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
-
   const orderId = String(params?.id || "");
 
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [allowed, setAllowed] = useState(false);
+  const [adminEmail, setAdminEmail] = useState("");
+
+  const [loadingOrder, setLoadingOrder] = useState(false);
   const [order, setOrder] = useState<OrderRow | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [errorText, setErrorText] = useState("");
+
+  async function getAccessToken() {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token || "";
+  }
+
+  async function loadOrder() {
+    setLoadingOrder(true);
+    setErrorText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace(`/account/login?next=/admin/orders/${orderId}`);
+        return;
+      }
+
+      const res = await fetch(
+        `/api/admin/orders?id=${encodeURIComponent(orderId)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to load order.");
+      }
+
+      setOrder(json?.order || null);
+    } catch (error: any) {
+      setErrorText(error?.message || "Failed to load order.");
+      setOrder(null);
+    } finally {
+      setLoadingOrder(false);
+    }
+  }
+
+  async function updateStatus(status: string) {
+    if (!order) return;
+
+    setUpdating(true);
+    setErrorText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace(`/account/login?next=/admin/orders/${orderId}`);
+        return;
+      }
+
+      const res = await fetch(`/api/admin/orders/${order.id}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Status update failed.");
+      }
+
+      setOrder(json?.order || null);
+    } catch (error: any) {
+      setErrorText(error?.message || "Status update failed.");
+    } finally {
+      setUpdating(false);
+    }
+  }
 
   useEffect(() => {
-    async function loadOrder() {
-      setLoading(true);
+    async function checkAdmin() {
+      setAuthLoading(true);
 
-      const { data: userData } = await supabase.auth.getUser();
-      const user = userData.user;
+      const { data } = await supabase.auth.getUser();
+      const user = data.user;
 
       if (!user) {
-        router.replace("/account/login?next=/account");
+        router.replace(`/account/login?next=/admin/orders/${orderId}`);
         return;
       }
 
-      const { data, error } = await supabase
-        .from("orders")
-        .select(
-          "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at"
-        )
-        .eq("id", orderId)
-        .eq("user_id", user.id)
-        .single();
+      const email = String(user.email || "").trim().toLowerCase();
+      setAdminEmail(email);
 
-      if (error || !data) {
-        setOrder(null);
-        setLoading(false);
+      if (!isAdminEmail(email)) {
+        setAllowed(false);
+        setAuthLoading(false);
         return;
       }
 
-      setOrder(data as OrderRow);
-      setLoading(false);
+      setAllowed(true);
+      setAuthLoading(false);
+      await loadOrder();
     }
 
-    if (orderId) loadOrder();
+    if (orderId) checkAdmin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId, router]);
 
   const activeStatusIndex = useMemo(() => {
-    const normalized = normalizeStatus(order?.status || "placed");
+    const normalized = normalizeOrderStatus(order?.status || "placed");
     const idx = STATUS_STEPS.findIndex((s) => s.key === normalized);
     return idx >= 0 ? idx : 0;
   }, [order?.status]);
 
-  if (loading) {
+  if (authLoading) {
     return (
       <div className="mx-auto max-w-md rounded-[28px] border border-neutral-200 bg-white p-6 text-center shadow-sm">
-        Loading order...
+        <Loader2 className="mx-auto h-6 w-6 animate-spin text-[#a30105]" />
+        <p className="mt-3 text-sm font-bold text-neutral-700">
+          Checking admin access...
+        </p>
       </div>
     );
   }
 
-  if (!order) {
+  if (!allowed) {
     return (
-      <div className="mx-auto max-w-md rounded-[28px] border border-neutral-200 bg-white p-6 text-center shadow-sm">
-        <h1 className="text-2xl font-black text-neutral-950">
-          Order Not Found
+      <div className="mx-auto max-w-md rounded-[28px] border border-red-200 bg-white p-6 text-center shadow-sm">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+          <ShieldCheck className="h-6 w-6" />
+        </div>
+
+        <h1 className="mt-4 text-2xl font-black text-neutral-950">
+          Admin Access Required
         </h1>
-        <p className="mt-2 text-sm text-neutral-500">
-          This order is not available or is not linked with your account.
+
+        <p className="mt-2 text-sm leading-6 text-neutral-500">
+          This account is not allowed to access this admin page.
+        </p>
+
+        <p className="mt-3 rounded-2xl bg-neutral-50 px-4 py-3 text-xs font-bold text-neutral-600">
+          Logged in as: {adminEmail || "Unknown"}
         </p>
 
         <Link
@@ -196,67 +274,120 @@ export default function OrderDetailPage() {
     );
   }
 
+  if (loadingOrder) {
+    return (
+      <div className="mx-auto max-w-md rounded-[28px] border border-neutral-200 bg-white p-6 text-center shadow-sm">
+        <Loader2 className="mx-auto h-6 w-6 animate-spin text-[#a30105]" />
+        <p className="mt-3 text-sm font-bold text-neutral-700">
+          Loading order...
+        </p>
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <div className="mx-auto max-w-md rounded-[28px] border border-neutral-200 bg-white p-6 text-center shadow-sm">
+        <h1 className="text-2xl font-black text-neutral-950">
+          Order Not Found
+        </h1>
+
+        <p className="mt-2 text-sm text-neutral-500">
+          This order is not available.
+        </p>
+
+        {errorText ? (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+            {errorText}
+          </div>
+        ) : null}
+
+        <Link
+          href="/admin/orders"
+          className="mt-6 inline-flex rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-bold text-white"
+        >
+          Back to Admin Orders
+        </Link>
+      </div>
+    );
+  }
+
   const orderItems = Array.isArray(order.items) ? order.items : [];
   const orderNumber = order.sales_order || `Order ${order.id.slice(0, 8)}`;
   const totals = getOrderTotals(order.total_amount);
-  const normalizedStatus = normalizeStatus(order.status);
+  const normalizedStatus = normalizeOrderStatus(order.status);
   const isCancelled = normalizedStatus === "cancelled";
 
-  const whatsappMessage = encodeURIComponent(
-    `Assalam o Alaikum, mujhe apne Vape Ustad order ke bare me help chahiye.\nOrder: ${orderNumber}`
-  );
-
-  const whatsappUrl = `https://wa.me/923015554249?text=${whatsappMessage}`;
-
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
-          href="/account"
+          href="/admin/orders"
           className="inline-flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm font-bold text-neutral-900 transition hover:bg-neutral-50"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Account
+          Back to Admin Orders
         </Link>
 
-        <a
-          href={whatsappUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-2xl border border-green-200 bg-green-50 px-4 py-2 text-sm font-bold text-green-700 transition hover:bg-green-100"
-        >
-          <MessageCircle className="h-4 w-4" />
-          WhatsApp Support
-        </a>
+        <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-2 text-sm font-bold text-green-700">
+          Admin: {adminEmail}
+        </div>
       </div>
 
+      {errorText ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+          {errorText}
+        </div>
+      ) : null}
+
       <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
-              Order Detail
+              Admin Order Detail
             </p>
+
             <h1 className="mt-3 text-3xl font-black text-neutral-950">
               {orderNumber}
             </h1>
+
             <p className="mt-2 flex items-center gap-2 text-sm text-neutral-500">
               <CalendarDays className="h-4 w-4" />
               {formatDate(order.created_at)}
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <span
-              className={`rounded-full border px-4 py-2 text-xs font-black uppercase ${getStatusBadgeClass(
-                order.status
-              )}`}
-            >
-              {getStatusLabel(order.status)}
-            </span>
+          <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+            <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+              Update Order Status
+            </label>
 
-            <span className="rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-black uppercase text-neutral-700">
-              {order.payment_method || "cod"}
-            </span>
+            <div className="mt-3 flex gap-2">
+              <select
+                value={normalizedStatus}
+                disabled={updating}
+                onChange={(event) => updateStatus(event.target.value)}
+                className="h-12 flex-1 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-black uppercase text-neutral-800 outline-none focus:border-[#a30105] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {ORDER_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {getOrderStatusLabel(status)}
+                  </option>
+                ))}
+              </select>
+
+              <div
+                className={`flex h-12 items-center rounded-2xl border px-4 text-xs font-black uppercase ${getStatusClasses(
+                  normalizedStatus
+                )}`}
+              >
+                {updating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  getOrderStatusLabel(normalizedStatus)
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -266,17 +397,18 @@ export default function OrderDetailPage() {
               <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#a30105]">
                 Tracking
               </p>
+
               <h2 className="mt-1 text-xl font-black text-neutral-950">
-                Order Status
+                Customer Visible Status
               </h2>
             </div>
 
             <span
-              className={`rounded-full border px-4 py-2 text-xs font-black uppercase ${getStatusBadgeClass(
-                order.status
+              className={`rounded-full border px-4 py-2 text-xs font-black uppercase ${getStatusClasses(
+                normalizedStatus
               )}`}
             >
-              {getStatusLabel(order.status)}
+              {getOrderStatusLabel(normalizedStatus)}
             </span>
           </div>
 
@@ -284,11 +416,11 @@ export default function OrderDetailPage() {
             <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-center text-red-700">
               <XCircle className="mx-auto h-10 w-10" />
               <div className="mt-3 text-sm font-black uppercase">
-                Order Cancelled
+                This order is cancelled
               </div>
               <p className="mt-2 text-sm leading-6 text-red-600">
-                Your order has been cancelled. For help, please contact Vape
-                Ustad support on WhatsApp.
+                Customer ke order detail page par bhi cancelled status show
+                hoga.
               </p>
             </div>
           ) : (
@@ -322,11 +454,6 @@ export default function OrderDetailPage() {
               })}
             </div>
           )}
-
-          <p className="mt-4 text-sm leading-6 text-neutral-500">
-            Status updates are shown here. Your order progress will update after
-            confirmation, processing, dispatch, and delivery.
-          </p>
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -335,9 +462,11 @@ export default function OrderDetailPage() {
               <UserRound className="h-4 w-4" />
               Customer
             </div>
+
             <div className="mt-2 font-black text-neutral-950">
               {order.customer_name || "Customer"}
             </div>
+
             <div className="mt-1 text-sm text-neutral-500">
               {order.customer_email || "No email"}
             </div>
@@ -348,6 +477,7 @@ export default function OrderDetailPage() {
               <Phone className="h-4 w-4" />
               Phone
             </div>
+
             <div className="mt-2 font-black text-neutral-950">
               {order.customer_phone || "Not added"}
             </div>
@@ -358,6 +488,7 @@ export default function OrderDetailPage() {
               <CreditCard className="h-4 w-4" />
               Payment
             </div>
+
             <div className="mt-2 font-black uppercase text-neutral-950">
               {order.payment_method || "cod"}
             </div>
@@ -368,9 +499,11 @@ export default function OrderDetailPage() {
               <MapPin className="h-4 w-4" />
               Delivery Address
             </div>
+
             <div className="mt-2 font-black text-neutral-950">
               {order.address_line1 || "Not added"}
             </div>
+
             <div className="mt-1 text-sm text-neutral-500">
               {order.city || "No city"}
             </div>
@@ -388,6 +521,7 @@ export default function OrderDetailPage() {
             <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
               Items
             </p>
+
             <h2 className="text-2xl font-black text-neutral-950">
               Order Summary
             </h2>
@@ -418,6 +552,7 @@ export default function OrderDetailPage() {
                   <div className="line-clamp-2 font-bold text-neutral-950">
                     {it?.name || "Item"}
                   </div>
+
                   <div className="mt-1 text-sm text-neutral-500">
                     Qty: {it?.qty || 1} × Rs {formatPKR(Number(it?.price || 0))}
                   </div>
@@ -448,6 +583,7 @@ export default function OrderDetailPage() {
                 <span className="text-sm font-medium text-neutral-500">
                   Total Amount
                 </span>
+
                 <span className="text-xl font-black text-neutral-950">
                   Rs {formatPKR(totals.total)}
                 </span>
