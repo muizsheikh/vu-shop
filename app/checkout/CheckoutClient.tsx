@@ -17,6 +17,8 @@ import { toast } from "sonner";
 import { useCartStore } from "@/store/cart";
 import { supabase } from "@/lib/supabaseClient";
 
+const DELIVERY_CHARGE = 200;
+
 type ApiError = {
   error?: string;
 };
@@ -90,8 +92,22 @@ export default function CheckoutClient() {
 
   const cartEmpty = items.length === 0;
 
-  const totalValue = useMemo(() => Number(total() || 0), [total]);
-  const totalPKR = useMemo(() => formatPKR(totalValue), [totalValue]);
+  const subtotalValue = useMemo(() => Number(total() || 0), [total]);
+  const deliveryAmount = cartEmpty ? 0 : DELIVERY_CHARGE;
+  const grandTotalValue = subtotalValue + deliveryAmount;
+
+  const subtotalPKR = useMemo(
+    () => formatPKR(subtotalValue),
+    [subtotalValue]
+  );
+  const deliveryPKR = useMemo(
+    () => formatPKR(deliveryAmount),
+    [deliveryAmount]
+  );
+  const grandTotalPKR = useMemo(
+    () => formatPKR(grandTotalValue),
+    [grandTotalValue]
+  );
 
   const profileIncomplete =
     !name.trim() || !phone.trim() || !address.trim() || !city.trim();
@@ -207,6 +223,7 @@ export default function CheckoutClient() {
           city: city.trim(),
           country: "Pakistan",
         },
+        delivery_charge: DELIVERY_CHARGE,
       };
 
       const res = await fetch("/api/cod", {
@@ -231,7 +248,7 @@ export default function CheckoutClient() {
         sales_order: data.so || null,
         payment_method: "cod",
         status: "placed",
-        total_amount: totalValue,
+        total_amount: grandTotalValue,
         currency: "PKR",
         customer_name: name.trim(),
         customer_email: email.trim(),
@@ -590,18 +607,18 @@ export default function CheckoutClient() {
                 <div className="mt-5 space-y-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
                   <div className="flex items-center justify-between text-sm text-neutral-600">
                     <span>Subtotal</span>
-                    <span>Rs {totalPKR}</span>
+                    <span>Rs {subtotalPKR}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-sm text-neutral-600">
-                    <span>Delivery</span>
-                    <span>Calculated after confirmation</span>
+                    <span>Delivery Charges</span>
+                    <span>Rs {deliveryPKR}</span>
                   </div>
 
                   <div className="border-t border-neutral-200 pt-3">
                     <div className="flex items-center justify-between text-lg font-bold text-neutral-950">
                       <span>Total</span>
-                      <span>Rs {totalPKR}</span>
+                      <span>Rs {grandTotalPKR}</span>
                     </div>
                   </div>
                 </div>

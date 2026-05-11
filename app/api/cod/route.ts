@@ -6,6 +6,10 @@ export const dynamic = "force-dynamic";
 const DEFAULT_CURRENCY = "PKR";
 const DEFAULT_COUNTRY = "Pakistan";
 
+const DELIVERY_ITEM_CODE = "DELIVERY-CHARGES";
+const DELIVERY_ITEM_NAME = "Delivery Charges";
+const DELIVERY_CHARGE = 200;
+
 const PREFERRED_CUSTOMER_GROUPS = [
   process.env.ERP_CUSTOMER_GROUP || "",
   "Website Customers",
@@ -42,6 +46,7 @@ function getEnv() {
 
 function authHeaders() {
   const { ERP_API_KEY, ERP_API_SECRET } = getEnv();
+
   return {
     "Content-Type": "application/json",
     Authorization: `token ${ERP_API_KEY}:${ERP_API_SECRET}`,
@@ -74,6 +79,7 @@ async function safeJson(res: Response) {
 
 async function erpnextFetch(path: string, opts: RequestInit = {}) {
   const url = buildResourceUrl(path);
+
   const res = await fetch(url, {
     ...opts,
     headers: {
@@ -97,6 +103,7 @@ function sanitizeString(value: unknown, fallback = "") {
 function sanitizeEmail(value: unknown) {
   const email = sanitizeString(value).toLowerCase();
   if (!email) return "";
+
   const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   return ok ? email : "";
 }
@@ -180,6 +187,7 @@ async function getDoctypeList(
   const json = await erpnextFetch(
     `${doctype}?fields=${enc(fields)}&limit_page_length=${limit}`
   );
+
   return Array.isArray(json?.data) ? json.data : [];
 }
 
@@ -309,9 +317,11 @@ async function ensureCustomer(input: {
   }
 
   const created = await createCustomer(input);
+
   if (!created?.name) {
     throw new Error("Failed to create customer");
   }
+
   return created.name as string;
 }
 
@@ -340,11 +350,13 @@ async function findShippingAddress(input: {
   for (const row of rows) {
     const detail = await erpnextFetch(`Address/${encodeURIComponent(row.name)}`);
     const links = Array.isArray(detail?.data?.links) ? detail.data.links : [];
+
     const linked = links.some(
       (l: any) =>
         l?.link_doctype === "Customer" &&
         String(l?.link_name || "") === input.customerId
     );
+
     if (linked) return detail.data.name;
   }
 
@@ -405,18 +417,31 @@ function getTomorrowDate() {
 }
 
 function buildSalesOrderItems(items: NormalizedCartItem[]) {
-  return items.map((it) => ({
+  const productItems = items.map((it) => ({
     item_code: it.item_code,
     qty: it.qty,
     rate: it.rate,
     description: it.item_name,
   }));
+
+  return [
+    ...productItems,
+    {
+      item_code: DELIVERY_ITEM_CODE,
+      qty: 1,
+      rate: DELIVERY_CHARGE,
+      description: DELIVERY_ITEM_NAME,
+    },
+  ];
 }
 
 function buildOrderRemarks(
   items: NormalizedCartItem[],
   customer: { name: string; email: string; phone?: string }
 ) {
+  const productTotal = items.reduce((sum, it) => sum + it.amount, 0);
+  const grandTotal = productTotal + DELIVERY_CHARGE;
+
   const lines = items.map(
     (it) =>
       `• ${it.item_name} (${it.item_code}) × ${it.qty} @ Rs ${it.rate.toLocaleString()} = Rs ${it.amount.toLocaleString()}`
@@ -430,6 +455,9 @@ function buildOrderRemarks(
     customer.phone ? `Phone: ${customer.phone}` : "",
     "",
     ...lines,
+    "",
+    `Delivery Charges: Rs ${DELIVERY_CHARGE.toLocaleString()}`,
+    `Grand Total: Rs ${grandTotal.toLocaleString()}`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -450,15 +478,27 @@ export async function POST(req: Request) {
 
     const items = normalizeCartItems(body?.items);
 
-    const customerName =
-      sanitizeString(body?.customer?.name, "Guest Checkout").slice(0, 140);
+    const customerName = sanitizeString(
+      body?.customer?.name,
+      "Guest Checkout"
+    ).slice(0, 140);
+
     const customerEmail =
       sanitizeEmail(body?.customer?.email) || "guest@vapeustad.com";
+
     const customerPhone = sanitizePhone(body?.customer?.phone);
 
-    const addressLine1 = sanitizeString(body?.customer?.address_line1).slice(0, 200);
+    const addressLine1 = sanitizeString(body?.customer?.address_line1).slice(
+      0,
+      200
+    );
+
     const city = sanitizeString(body?.customer?.city).slice(0, 140);
-    const country = sanitizeString(body?.customer?.country, DEFAULT_COUNTRY).slice(0, 140);
+
+    const country = sanitizeString(
+      body?.customer?.country,
+      DEFAULT_COUNTRY
+    ).slice(0, 140);
 
     const customerId = await ensureCustomer({
       name: customerName,

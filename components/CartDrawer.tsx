@@ -8,6 +8,8 @@ import { toast } from "sonner";
 import { useCartStore } from "@/store/cart";
 import { supabase } from "@/lib/supabaseClient";
 
+const DELIVERY_CHARGE = 200;
+
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
 
@@ -64,6 +66,8 @@ export default function CartDrawer() {
   const cartCount = ready ? count() : 0;
   const cartTotal = useMemo(() => Number(total() || 0), [total]);
   const cartEmpty = items.length === 0;
+  const deliveryAmount = cartEmpty ? 0 : DELIVERY_CHARGE;
+  const grandTotal = cartTotal + deliveryAmount;
 
   async function goToCheckout() {
     if (cartEmpty) return;
@@ -233,14 +237,14 @@ export default function CartDrawer() {
                 </div>
 
                 <div className="mt-2 flex items-center justify-between text-sm text-neutral-600">
-                  <span>Delivery</span>
-                  <span>Calculated at checkout</span>
+                  <span>Delivery Charges</span>
+                  <span>Rs {formatPKR(deliveryAmount)}</span>
                 </div>
 
                 <div className="mt-3 border-t border-neutral-200 pt-3">
                   <div className="flex items-center justify-between text-lg font-bold text-neutral-950">
                     <span>Total</span>
-                    <span>Rs {formatPKR(cartTotal)}</span>
+                    <span>Rs {formatPKR(grandTotal)}</span>
                   </div>
                 </div>
               </div>
