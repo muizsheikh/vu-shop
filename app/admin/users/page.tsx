@@ -66,6 +66,13 @@ const ROLE_FILTERS = [
   { key: "customer", label: "Customer" },
 ];
 
+const EDITABLE_ROLES = [
+  { key: "customer", label: "Customer" },
+  { key: "support", label: "Support" },
+  { key: "manager", label: "Manager" },
+  { key: "admin", label: "Admin" },
+];
+
 const ACTIVE_FILTERS = [
   { key: "all", label: "All Accounts" },
   { key: "active", label: "Active" },
@@ -119,6 +126,16 @@ function getFilterClass(active: boolean) {
   return "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50";
 }
 
+function replaceUserInList(users: UserRow[], updatedUser: UserRow) {
+  return users.map((user) => {
+    if (user.id === updatedUser.id) {
+      return updatedUser;
+    }
+
+    return user;
+  });
+}
+
 export default function AdminUsersPage() {
   const router = useRouter();
 
@@ -132,11 +149,13 @@ export default function AdminUsersPage() {
   const [summary, setSummary] = useState<SummaryState>(DEFAULT_SUMMARY);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [errorText, setErrorText] = useState("");
+  const [successText, setSuccessText] = useState("");
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [activeFilter, setActiveFilter] = useState("all");
   const [canManageUsers, setCanManageUsers] = useState(false);
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
 
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
@@ -183,6 +202,7 @@ export default function AdminUsersPage() {
   }) {
     setLoadingUsers(true);
     setErrorText("");
+    setSuccessText("");
 
     const nextSearch = options?.searchValue ?? search;
     const nextRole = options?.roleValue ?? roleFilter;
@@ -237,6 +257,60 @@ export default function AdminUsersPage() {
       setCanManageUsers(false);
     } finally {
       setLoadingUsers(false);
+    }
+  }
+
+  async function updateUserAccess(
+    user: UserRow,
+    update: {
+      role?: string;
+      is_active?: boolean;
+    }
+  ) {
+    setUpdatingUserId(user.id);
+    setErrorText("");
+    setSuccessText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace("/account/login?next=/admin/users");
+        return;
+      }
+
+      const res = await fetch(`/api/admin/users/${user.id}/role`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(update),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to update user access.");
+      }
+
+      const updatedUser = json?.user as UserRow;
+
+      if (updatedUser?.id) {
+        setUsers((current) => replaceUserInList(current, updatedUser));
+      }
+
+      if (json?.admin) {
+        setAdminUser(json.admin);
+        setAdminEmail(json.admin.email || "");
+      }
+
+      setSuccessText("User access updated successfully.");
+      await loadUsers();
+    } catch (error: any) {
+      setErrorText(error?.message || "Failed to update user access.");
+    } finally {
+      setUpdatingUserId(null);
     }
   }
 
@@ -379,8 +453,8 @@ export default function AdminUsersPage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-              Review registered customers and admin accounts. Role updates and
-              account activation controls will be added in the next step.
+              Manage registered customers, staff roles and account activation
+              status from one secure admin screen.
             </p>
           </div>
 
@@ -517,6 +591,12 @@ export default function AdminUsersPage() {
           ))}
         </div>
 
+        {successText ? (
+          <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-bold text-green-700">
+            {successText}
+          </div>
+        ) : null}
+
         {errorText ? (
           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
             {errorText}
@@ -543,7 +623,7 @@ export default function AdminUsersPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1050px] border-separate border-spacing-y-3">
+            <table className="w-full min-w-[1180px] border-separate border-spacing-y-3">
               <thead>
                 <tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500">
                   <th className="px-3 py-2">User</th>
@@ -557,85 +637,164 @@ export default function AdminUsersPage() {
               </thead>
 
               <tbody>
-                {users.map((user) => (
-                  <tr key={user.id}>
-                    <td className="rounded-l-2xl border-y border-l border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#a30105] shadow-sm">
-                          <UserRound className="h-5 w-5" />
-                        </div>
+                {users.map((user) => {
+                  const isUpdating = updatingUserId === user.id;
+                  const isSelf = adminUser?.id === user.id;
+                  const controlsDisabled =
+                    !canManageUsers || isUpdating || (isSelf && user.role === "admin");
 
-                        <div className="min-w-0">
-                          <div className="font-black text-neutral-950">
-                            {user.full_name || "Unnamed User"}
+                  return (
+                    <tr key={user.id}>
+                      <td className="rounded-l-2xl border-y border-l border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#a30105] shadow-sm">
+                            <UserRound className="h-5 w-5" />
                           </div>
-                          <div className="mt-1 truncate text-xs font-bold text-neutral-500">
-                            {user.email || "No email"}
-                          </div>
-                          {!user.has_profile ? (
-                            <div className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase text-amber-700">
-                              Missing Profile
+
+                          <div className="min-w-0">
+                            <div className="font-black text-neutral-950">
+                              {user.full_name || "Unnamed User"}
                             </div>
-                          ) : null}
+                            <div className="mt-1 truncate text-xs font-bold text-neutral-500">
+                              {user.email || "No email"}
+                            </div>
+                            {!user.has_profile ? (
+                              <div className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase text-amber-700">
+                                Missing Profile
+                              </div>
+                            ) : null}
+                            {isSelf ? (
+                              <div className="mt-2 inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[10px] font-black uppercase text-blue-700">
+                                Current Admin
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
-                      <div className="font-bold text-neutral-950">
-                        {user.phone || "No phone"}
-                      </div>
-                      <div className="mt-1 text-xs text-neutral-500">
-                        {user.email_confirmed_at ? "Email confirmed" : "Email not confirmed"}
-                      </div>
-                    </td>
+                      <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <div className="font-bold text-neutral-950">
+                          {user.phone || "No phone"}
+                        </div>
+                        <div className="mt-1 text-xs text-neutral-500">
+                          {user.email_confirmed_at
+                            ? "Email confirmed"
+                            : "Email not confirmed"}
+                        </div>
+                      </td>
 
-                    <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
-                      <div className="font-bold text-neutral-950">
-                        {user.city || "No city"}
-                      </div>
-                      <div className="mt-1 line-clamp-1 text-xs text-neutral-500">
-                        {user.address_line1 || "No address"}
-                      </div>
-                    </td>
+                      <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <div className="font-bold text-neutral-950">
+                          {user.city || "No city"}
+                        </div>
+                        <div className="mt-1 line-clamp-1 text-xs text-neutral-500">
+                          {user.address_line1 || "No address"}
+                        </div>
+                      </td>
 
-                    <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
-                      <span
-                        className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getRoleClasses(
-                          user.role
-                        )}`}
-                      >
-                        {getRoleLabel(user.role)}
-                      </span>
-                    </td>
+                      <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        {canManageUsers ? (
+                          <div className="space-y-2">
+                            <select
+                              value={user.role}
+                              disabled={controlsDisabled}
+                              onChange={(event) =>
+                                updateUserAccess(user, {
+                                  role: event.target.value,
+                                })
+                              }
+                              className="h-10 w-full min-w-[145px] rounded-xl border border-neutral-200 bg-white px-3 text-xs font-black uppercase text-neutral-800 outline-none focus:border-[#a30105] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {EDITABLE_ROLES.map((role) => (
+                                <option key={role.key} value={role.key}>
+                                  {role.label}
+                                </option>
+                              ))}
+                            </select>
 
-                    <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
-                      {user.is_active ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-black uppercase text-green-700">
-                          <UserCheck className="h-3.5 w-3.5" />
-                          Active
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-black uppercase text-red-700">
-                          <XCircle className="h-3.5 w-3.5" />
-                          Inactive
-                        </span>
-                      )}
-                    </td>
+                            <span
+                              className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getRoleClasses(
+                                user.role
+                              )}`}
+                            >
+                              {getRoleLabel(user.role)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span
+                            className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getRoleClasses(
+                              user.role
+                            )}`}
+                          >
+                            {getRoleLabel(user.role)}
+                          </span>
+                        )}
+                      </td>
 
-                    <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
-                      <div className="text-sm font-bold text-neutral-700">
-                        {formatDate(user.created_at)}
-                      </div>
-                    </td>
+                      <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        {canManageUsers ? (
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              disabled={controlsDisabled}
+                              onClick={() =>
+                                updateUserAccess(user, {
+                                  is_active: !user.is_active,
+                                })
+                              }
+                              className={`inline-flex w-full min-w-[130px] items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-black uppercase transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                user.is_active
+                                  ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+                                  : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                              }`}
+                            >
+                              {isUpdating ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : user.is_active ? (
+                                <UserCheck className="h-3.5 w-3.5" />
+                              ) : (
+                                <XCircle className="h-3.5 w-3.5" />
+                              )}
+                              {user.is_active ? "Active" : "Inactive"}
+                            </button>
 
-                    <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
-                      <div className="text-sm font-bold text-neutral-700">
-                        {formatDate(user.last_sign_in_at)}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                            <div className="text-[10px] font-bold uppercase text-neutral-400">
+                              Click to {user.is_active ? "disable" : "enable"}
+                            </div>
+                          </div>
+                        ) : user.is_active ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-black uppercase text-green-700">
+                            <UserCheck className="h-3.5 w-3.5" />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-black uppercase text-red-700">
+                            <XCircle className="h-3.5 w-3.5" />
+                            Inactive
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <div className="text-sm font-bold text-neutral-700">
+                          {formatDate(user.created_at)}
+                        </div>
+                      </td>
+
+                      <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <div className="text-sm font-bold text-neutral-700">
+                          {formatDate(user.last_sign_in_at)}
+                        </div>
+                        {isUpdating ? (
+                          <div className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-neutral-500">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Saving...
+                          </div>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
