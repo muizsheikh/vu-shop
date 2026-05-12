@@ -1,62 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import {
-  isAdminEmail,
   normalizeOrderStatus,
   ORDER_STATUSES,
 } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { getAdminUserFromRequest } from "@/lib/adminAuth";
 
 const ORDER_SELECT =
   "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at, delivery_method, rider_name, rider_phone, delivery_note, tracking_number, expected_delivery_time";
 
 const DELIVERY_METHODS = ["", "rider", "courier", "pickup"];
-
-const authClient = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
-
-async function getAdminUser(req: NextRequest) {
-  const authHeader = req.headers.get("authorization") || "";
-  const token = authHeader.replace("Bearer ", "").trim();
-
-  if (!token) {
-    return {
-      ok: false as const,
-      status: 401,
-      message: "Missing authorization token.",
-    };
-  }
-
-  const { data, error } = await authClient.auth.getUser(token);
-
-  if (error || !data.user) {
-    return {
-      ok: false as const,
-      status: 401,
-      message: "Invalid or expired session.",
-    };
-  }
-
-  if (!isAdminEmail(data.user.email)) {
-    return {
-      ok: false as const,
-      status: 403,
-      message: "You are not allowed to update orders.",
-    };
-  }
-
-  return {
-    ok: true as const,
-    user: data.user,
-  };
-}
 
 function cleanText(value: unknown) {
   const text = String(value || "").trim();
@@ -117,7 +70,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const admin = await getAdminUser(req);
+    const admin = await getAdminUserFromRequest(req);
 
     if (!admin.ok) {
       return NextResponse.json(
@@ -129,7 +82,10 @@ export async function GET(
     const { id } = await context.params;
     const history = await loadHistory(id);
 
-    return NextResponse.json({ history });
+    return NextResponse.json({
+      history,
+      admin: admin.user,
+    });
   } catch (error: any) {
     return NextResponse.json(
       {
@@ -147,7 +103,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const admin = await getAdminUser(req);
+    const admin = await getAdminUserFromRequest(req);
 
     if (!admin.ok) {
       return NextResponse.json(
@@ -212,8 +168,6 @@ export async function PATCH(
       );
     }
 
-    const changedByEmail = String(admin.user.email || "").trim().toLowerCase();
-
     const updatePayload = {
       status: requestedStatus,
       delivery_method: deliveryMethod.value,
@@ -243,7 +197,7 @@ export async function PATCH(
         order_id: id,
         old_status: oldStatus,
         new_status: requestedStatus,
-        changed_by_email: changedByEmail,
+        changed_by_email: admin.user.email,
       });
     }
 
@@ -252,6 +206,7 @@ export async function PATCH(
     return NextResponse.json({
       order: data,
       history,
+      admin: admin.user,
       message:
         oldStatus === requestedStatus
           ? "Order updated successfully."

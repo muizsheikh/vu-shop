@@ -1,60 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { isAdminEmail } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { getAdminUserFromRequest } from "@/lib/adminAuth";
 
 const ORDER_SELECT =
   "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at, delivery_method, rider_name, rider_phone, delivery_note, tracking_number, expected_delivery_time";
 
-const authClient = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
-
-async function getAdminUser(req: NextRequest) {
-  const authHeader = req.headers.get("authorization") || "";
-  const token = authHeader.replace("Bearer ", "").trim();
-
-  if (!token) {
-    return {
-      ok: false as const,
-      status: 401,
-      message: "Missing authorization token.",
-    };
-  }
-
-  const { data, error } = await authClient.auth.getUser(token);
-
-  if (error || !data.user) {
-    return {
-      ok: false as const,
-      status: 401,
-      message: "Invalid or expired session.",
-    };
-  }
-
-  if (!isAdminEmail(data.user.email)) {
-    return {
-      ok: false as const,
-      status: 403,
-      message: "You are not allowed to access admin orders.",
-    };
-  }
-
-  return {
-    ok: true as const,
-    user: data.user,
-  };
-}
-
 export async function GET(req: NextRequest) {
   try {
-    const admin = await getAdminUser(req);
+    const admin = await getAdminUserFromRequest(req);
 
     if (!admin.ok) {
       return NextResponse.json(
@@ -117,7 +70,10 @@ export async function GET(req: NextRequest) {
         })
       : allOrders;
 
-    return NextResponse.json({ orders: filteredOrders });
+    return NextResponse.json({
+      orders: filteredOrders,
+      admin: admin.user,
+    });
   } catch (error: any) {
     return NextResponse.json(
       {
