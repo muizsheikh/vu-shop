@@ -726,8 +726,6 @@ export default function AdminOrdersPage() {
     URL.revokeObjectURL(url);
   }
 
-
-
   async function exportFullOrdersCsv() {
     setExportingFullCsv(true);
     setErrorText("");
@@ -853,8 +851,8 @@ export default function AdminOrdersPage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-              Orders ab server-side search, status filter, date filter aur
-              pagination ke sath load ho rahe hain.
+              Manage website orders with server-side search, status filters,
+              date filters, pagination and CSV exports.
             </p>
           </div>
 
@@ -1010,7 +1008,9 @@ export default function AdminOrdersPage() {
 
           <button
             type="button"
-            disabled={loadingOrders || exportingFullCsv || pagination.total_count === 0}
+            disabled={
+              loadingOrders || exportingFullCsv || pagination.total_count === 0
+            }
             onClick={exportFullOrdersCsv}
             className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] px-6 text-sm font-black text-[#a30105] transition hover:bg-[#fff1f1] disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -1104,7 +1104,7 @@ export default function AdminOrdersPage() {
               No Orders Found
             </h2>
             <p className="mt-2 text-sm text-neutral-500">
-              Search reset karo ya status/date filter change karo.
+              Try clearing the search or changing the status/date filters.
             </p>
           </div>
         ) : (

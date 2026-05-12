@@ -427,8 +427,8 @@ export default function AdminDashboardPage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-              Website/customer app orders ka daily overview, revenue summary,
-              pending workload aur latest orders yahan show honge.
+              Monitor website orders, revenue, active workload and the latest
+              customer activity from one central dashboard.
             </p>
           </div>
 

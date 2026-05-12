@@ -686,7 +686,7 @@ export default function AdminOrderDetailPage() {
     const cleanNote = noteText.trim();
 
     if (!cleanNote) {
-      setNoteErrorText("Note likhna zaroori hai.");
+      setNoteErrorText("Please write a note before saving.");
       return;
     }
 
@@ -1016,8 +1016,7 @@ export default function AdminOrderDetailPage() {
                 This order is cancelled
               </div>
               <p className="mt-2 text-sm leading-6 text-red-600">
-                Customer ke order detail page par bhi cancelled status show
-                hoga.
+                This cancelled status will also be visible on the customer order detail page.
               </p>
             </div>
           ) : (
@@ -1215,8 +1214,7 @@ export default function AdminOrderDetailPage() {
 
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm leading-6 text-neutral-500">
-              Ye details customer order detail page par show ho sakti hain.
-              WhatsApp “Out” message me bhi delivery info include hogi.
+              These details can be shown on the customer order detail page and included in the WhatsApp out-for-delivery message.
             </p>
 
             <button
@@ -1264,8 +1262,7 @@ export default function AdminOrderDetailPage() {
 
           {!hasWhatsappPhone ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-700">
-              Customer phone number missing/invalid hai. Button WhatsApp open
-              karega lekin direct customer chat open nahi hogi.
+              Customer phone number is missing or invalid. WhatsApp will open, but it may not start a direct customer chat.
             </div>
           ) : null}
 
@@ -1351,8 +1348,7 @@ export default function AdminOrderDetailPage() {
 
           {notifications.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-green-200 bg-green-50/40 p-5 text-center text-sm text-neutral-500">
-              Abhi koi WhatsApp communication log nahi hai. WhatsApp action
-              open karne ke baad yahan record show hoga.
+              No WhatsApp communication logs yet. A record will appear here after a WhatsApp action is opened.
             </div>
           ) : (
             <div className="space-y-3">
@@ -1468,8 +1464,7 @@ export default function AdminOrderDetailPage() {
           <div className="mt-5">
             {notes.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-[#a30105]/20 bg-white p-5 text-center text-sm text-neutral-500">
-                Abhi koi internal note nahi hai. Note save karne ke baad yahan
-                show hoga.
+                No internal notes yet. Saved notes will appear here.
               </div>
             ) : (
               <div className="space-y-3">
@@ -1527,8 +1522,7 @@ export default function AdminOrderDetailPage() {
 
           {history.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-5 text-center text-sm text-neutral-500">
-              Abhi status history available nahi hai. Next status change ke baad
-              yahan audit log show hoga.
+              No status history is available yet. Audit logs will appear here after the next status change.
             </div>
           ) : (
             <div className="space-y-3">

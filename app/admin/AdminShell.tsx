@@ -340,7 +340,8 @@ export default function AdminShell({ children }: AdminShellProps) {
               Secure Area
             </div>
             <p className="mt-2 text-xs font-bold leading-5 text-neutral-600">
-              Admin pages database role system ke through protected hain.
+              Admin access is protected through database roles and active account
+              status checks.
             </p>
           </div>
         </aside>
