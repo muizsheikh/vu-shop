@@ -18,7 +18,6 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import {
   getOrderStatusLabel,
-  isAdminEmail,
   normalizeOrderStatus,
 } from "@/lib/admin";
 
@@ -36,6 +35,13 @@ type OrderRow = {
   address_line1: string | null;
   items: any[] | null;
   created_at: string;
+};
+
+type AdminUser = {
+  id: string;
+  email: string;
+  role: string;
+  is_active: boolean;
 };
 
 type DateFilter =
@@ -180,7 +186,9 @@ export default function AdminDashboardPage() {
 
   const [authLoading, setAuthLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [adminEmail, setAdminEmail] = useState("");
+  const [accessError, setAccessError] = useState("");
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -192,12 +200,44 @@ export default function AdminDashboardPage() {
     return data.session?.access_token || "";
   }
 
-  async function loadOrders() {
+  async function checkAdminAccess() {
+    const token = await getAccessToken();
+
+    if (!token) {
+      router.replace("/account/login?next=/admin");
+      return null;
+    }
+
+    const res = await fetch("/api/admin/me", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok || !json?.allowed) {
+      setAllowed(false);
+      setAccessError(json?.error || "Admin access required.");
+      setAdminUser(json?.user || null);
+      setAdminEmail(json?.user?.email || "");
+      return null;
+    }
+
+    const user = json.user as AdminUser;
+    setAllowed(true);
+    setAdminUser(user);
+    setAdminEmail(user.email || "");
+
+    return token;
+  }
+
+  async function loadOrders(tokenFromCheck?: string) {
     setLoadingOrders(true);
     setErrorText("");
 
     try {
-      const token = await getAccessToken();
+      const token = tokenFromCheck || (await getAccessToken());
 
       if (!token) {
         router.replace("/account/login?next=/admin");
@@ -217,6 +257,11 @@ export default function AdminDashboardPage() {
       }
 
       setOrders(Array.isArray(json?.orders) ? json.orders : []);
+
+      if (json?.admin) {
+        setAdminUser(json.admin);
+        setAdminEmail(json.admin.email || "");
+      }
     } catch (error: any) {
       setErrorText(error?.message || "Failed to load dashboard orders.");
       setOrders([]);
@@ -226,7 +271,7 @@ export default function AdminDashboardPage() {
   }
 
   useEffect(() => {
-    async function checkAdmin() {
+    async function initAdmin() {
       setAuthLoading(true);
 
       const { data } = await supabase.auth.getUser();
@@ -237,21 +282,18 @@ export default function AdminDashboardPage() {
         return;
       }
 
-      const email = String(user.email || "").trim().toLowerCase();
-      setAdminEmail(email);
+      setAdminEmail(String(user.email || "").trim().toLowerCase());
 
-      if (!isAdminEmail(email)) {
-        setAllowed(false);
-        setAuthLoading(false);
-        return;
-      }
+      const token = await checkAdminAccess();
 
-      setAllowed(true);
       setAuthLoading(false);
-      await loadOrders();
+
+      if (token) {
+        await loadOrders(token);
+      }
     }
 
-    checkAdmin();
+    initAdmin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
@@ -354,7 +396,7 @@ export default function AdminDashboardPage() {
         </h1>
 
         <p className="mt-2 text-sm leading-6 text-neutral-500">
-          This account is not allowed to access admin dashboard.
+          {accessError || "This account is not allowed to access admin dashboard."}
         </p>
 
         <p className="mt-3 rounded-2xl bg-neutral-50 px-4 py-3 text-xs font-bold text-neutral-600">
@@ -418,6 +460,10 @@ export default function AdminDashboardPage() {
         <div className="mt-5 flex flex-wrap items-center gap-2">
           <span className="rounded-full border border-green-200 bg-green-50 px-4 py-2 text-xs font-black uppercase text-green-700">
             Admin: {adminEmail}
+          </span>
+
+          <span className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-black uppercase text-blue-700">
+            Role: {adminUser?.role || "admin"}
           </span>
 
           <span className="rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-black uppercase text-neutral-600">

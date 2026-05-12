@@ -20,7 +20,6 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import {
   getOrderStatusLabel,
-  isAdminEmail,
   normalizeOrderStatus,
   ORDER_STATUSES,
 } from "@/lib/admin";
@@ -39,6 +38,13 @@ type OrderRow = {
   address_line1: string | null;
   items: any[] | null;
   created_at: string;
+};
+
+type AdminUser = {
+  id: string;
+  email: string;
+  role: string;
+  is_active: boolean;
 };
 
 type StatusFilter =
@@ -251,7 +257,7 @@ function getSafeFilePart(value: string) {
 function getExportFileName(
   dateValue: DateFilter,
   statusValue: StatusFilter,
-  searchValue: string,
+  searchValue: string
 ) {
   const today = new Date().toISOString().slice(0, 10);
   const datePart = getSafeFilePart(dateValue);
@@ -291,7 +297,7 @@ function getInitialDateFilter(): DateFilter {
 function updateBrowserUrl(
   searchValue: string,
   statusValue: StatusFilter,
-  dateValue: DateFilter,
+  dateValue: DateFilter
 ) {
   if (typeof window === "undefined") return;
 
@@ -320,7 +326,9 @@ export default function AdminOrdersPage() {
 
   const [authLoading, setAuthLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [adminEmail, setAdminEmail] = useState("");
+  const [accessError, setAccessError] = useState("");
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -335,12 +343,49 @@ export default function AdminOrdersPage() {
     return data.session?.access_token || "";
   }
 
-  async function loadOrders(searchValue = "") {
+  async function checkAdminAccess() {
+    const token = await getAccessToken();
+
+    if (!token) {
+      const nextQuery =
+        typeof window !== "undefined" && window.location.search
+          ? `/admin/orders${window.location.search}`
+          : "/admin/orders";
+
+      router.replace(`/account/login?next=${encodeURIComponent(nextQuery)}`);
+      return null;
+    }
+
+    const res = await fetch("/api/admin/me", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok || !json?.allowed) {
+      setAllowed(false);
+      setAccessError(json?.error || "Admin access required.");
+      setAdminUser(json?.user || null);
+      setAdminEmail(json?.user?.email || "");
+      return null;
+    }
+
+    const user = json.user as AdminUser;
+    setAllowed(true);
+    setAdminUser(user);
+    setAdminEmail(user.email || "");
+
+    return token;
+  }
+
+  async function loadOrders(searchValue = "", tokenFromCheck?: string) {
     setLoadingOrders(true);
     setErrorText("");
 
     try {
-      const token = await getAccessToken();
+      const token = tokenFromCheck || (await getAccessToken());
 
       if (!token) {
         router.replace("/account/login?next=/admin/orders");
@@ -364,6 +409,11 @@ export default function AdminOrdersPage() {
       }
 
       setOrders(Array.isArray(json?.orders) ? json.orders : []);
+
+      if (json?.admin) {
+        setAdminUser(json.admin);
+        setAdminEmail(json.admin.email || "");
+      }
     } catch (error: any) {
       setErrorText(error?.message || "Failed to load admin orders.");
       setOrders([]);
@@ -402,8 +452,13 @@ export default function AdminOrdersPage() {
       const updatedOrder = json?.order as OrderRow;
 
       setOrders((prev) =>
-        prev.map((order) => (order.id === orderId ? updatedOrder : order)),
+        prev.map((order) => (order.id === orderId ? updatedOrder : order))
       );
+
+      if (json?.admin) {
+        setAdminUser(json.admin);
+        setAdminEmail(json.admin.email || "");
+      }
     } catch (error: any) {
       setErrorText(error?.message || "Status update failed.");
     } finally {
@@ -438,7 +493,7 @@ export default function AdminOrdersPage() {
   }
 
   useEffect(() => {
-    async function checkAdmin() {
+    async function initAdmin() {
       setAuthLoading(true);
 
       const initialSearch = getInitialSearch();
@@ -461,29 +516,24 @@ export default function AdminOrdersPage() {
         return;
       }
 
-      const email = String(user.email || "")
-        .trim()
-        .toLowerCase();
-      setAdminEmail(email);
+      setAdminEmail(String(user.email || "").trim().toLowerCase());
 
-      if (!isAdminEmail(email)) {
-        setAllowed(false);
-        setAuthLoading(false);
-        return;
-      }
+      const token = await checkAdminAccess();
 
-      setAllowed(true);
       setAuthLoading(false);
-      await loadOrders(initialSearch);
+
+      if (token) {
+        await loadOrders(initialSearch, token);
+      }
     }
 
-    checkAdmin();
+    initAdmin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   const dateFilteredOrders = useMemo(() => {
     return orders.filter((order) =>
-      isOrderInDateFilter(order.created_at, dateFilter),
+      isOrderInDateFilter(order.created_at, dateFilter)
     );
   }, [orders, dateFilter]);
 
@@ -493,22 +543,22 @@ export default function AdminOrdersPage() {
       pending: dateFilteredOrders.filter((o) => isPendingStatus(o.status))
         .length,
       placed: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "placed",
+        (o) => normalizeOrderStatus(o.status) === "placed"
       ).length,
       confirmed: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "confirmed",
+        (o) => normalizeOrderStatus(o.status) === "confirmed"
       ).length,
       processing: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "processing",
+        (o) => normalizeOrderStatus(o.status) === "processing"
       ).length,
       outForDelivery: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "out_for_delivery",
+        (o) => normalizeOrderStatus(o.status) === "out_for_delivery"
       ).length,
       delivered: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "delivered",
+        (o) => normalizeOrderStatus(o.status) === "delivered"
       ).length,
       cancelled: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "cancelled",
+        (o) => normalizeOrderStatus(o.status) === "cancelled"
       ).length,
     };
   }, [dateFilteredOrders]);
@@ -518,12 +568,12 @@ export default function AdminOrdersPage() {
 
     if (activeFilter === "pending") {
       return dateFilteredOrders.filter((order) =>
-        isPendingStatus(order.status),
+        isPendingStatus(order.status)
       );
     }
 
     return dateFilteredOrders.filter(
-      (order) => normalizeOrderStatus(order.status) === activeFilter,
+      (order) => normalizeOrderStatus(order.status) === activeFilter
     );
   }, [dateFilteredOrders, activeFilter]);
 
@@ -629,7 +679,7 @@ export default function AdminOrdersPage() {
         </h1>
 
         <p className="mt-2 text-sm leading-6 text-neutral-500">
-          This account is not allowed to access admin orders.
+          {accessError || "This account is not allowed to access admin orders."}
         </p>
 
         <p className="mt-3 rounded-2xl bg-neutral-50 px-4 py-3 text-xs font-bold text-neutral-600">
@@ -666,8 +716,14 @@ export default function AdminOrdersPage() {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-700">
-            Admin: {adminEmail}
+          <div className="flex flex-wrap gap-2">
+            <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-700">
+              Admin: {adminEmail}
+            </div>
+
+            <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold uppercase text-blue-700">
+              Role: {adminUser?.role || "admin"}
+            </div>
           </div>
         </div>
 
@@ -695,7 +751,7 @@ export default function AdminOrdersPage() {
             onClick={() => changeFilter("all")}
             className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
               activeFilter === "all",
-              "all",
+              "all"
             )}`}
           >
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
@@ -710,7 +766,7 @@ export default function AdminOrdersPage() {
             onClick={() => changeFilter("pending")}
             className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
               activeFilter === "pending",
-              "pending",
+              "pending"
             )}`}
           >
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
@@ -725,7 +781,7 @@ export default function AdminOrdersPage() {
             onClick={() => changeFilter("placed")}
             className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
               activeFilter === "placed",
-              "placed",
+              "placed"
             )}`}
           >
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
@@ -740,7 +796,7 @@ export default function AdminOrdersPage() {
             onClick={() => changeFilter("confirmed")}
             className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
               activeFilter === "confirmed",
-              "confirmed",
+              "confirmed"
             )}`}
           >
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
@@ -755,7 +811,7 @@ export default function AdminOrdersPage() {
             onClick={() => changeFilter("processing")}
             className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
               activeFilter === "processing",
-              "processing",
+              "processing"
             )}`}
           >
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
@@ -770,7 +826,7 @@ export default function AdminOrdersPage() {
             onClick={() => changeFilter("out_for_delivery")}
             className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
               activeFilter === "out_for_delivery",
-              "out_for_delivery",
+              "out_for_delivery"
             )}`}
           >
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
@@ -787,7 +843,7 @@ export default function AdminOrdersPage() {
             onClick={() => changeFilter("delivered")}
             className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
               activeFilter === "delivered",
-              "delivered",
+              "delivered"
             )}`}
           >
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
@@ -802,7 +858,7 @@ export default function AdminOrdersPage() {
             onClick={() => changeFilter("cancelled")}
             className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
               activeFilter === "cancelled",
-              "cancelled",
+              "cancelled"
             )}`}
           >
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
@@ -826,7 +882,7 @@ export default function AdminOrdersPage() {
                   type="button"
                   onClick={() => changeDateFilter(filter.key)}
                   className={`rounded-full border px-4 py-2 text-xs font-black uppercase transition ${getDateFilterButtonClass(
-                    active,
+                    active
                   )}`}
                 >
                   {filter.label}
@@ -892,7 +948,7 @@ export default function AdminOrdersPage() {
                 onClick={() => changeFilter(filter.key)}
                 className={`rounded-full border px-4 py-2 text-xs font-black uppercase transition ${getFilterButtonClass(
                   active,
-                  filter.key,
+                  filter.key
                 )}`}
               >
                 {filter.label} ({getFilterCount(filter.key)})
@@ -998,7 +1054,7 @@ export default function AdminOrdersPage() {
                       <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
                         <span
                           className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getStatusClasses(
-                            normalizedStatus,
+                            normalizedStatus
                           )}`}
                         >
                           {getOrderStatusLabel(normalizedStatus)}
