@@ -10,6 +10,11 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+const ORDER_SELECT =
+  "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at, delivery_method, rider_name, rider_phone, delivery_note, tracking_number, expected_delivery_time";
+
+const DELIVERY_METHODS = ["", "rider", "courier", "pickup"];
+
 const authClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: false,
@@ -51,6 +56,46 @@ async function getAdminUser(req: NextRequest) {
     ok: true as const,
     user: data.user,
   };
+}
+
+function cleanText(value: unknown) {
+  const text = String(value || "").trim();
+  return text.length ? text : null;
+}
+
+function cleanDeliveryMethod(value: unknown) {
+  const method = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(" ", "_")
+    .replaceAll("-", "_");
+
+  if (!DELIVERY_METHODS.includes(method)) {
+    return {
+      ok: false as const,
+      value: null,
+      message: "Invalid delivery method.",
+    };
+  }
+
+  return {
+    ok: true as const,
+    value: method || null,
+  };
+}
+
+function cleanExpectedDeliveryTime(value: unknown) {
+  const text = String(value || "").trim();
+
+  if (!text) return null;
+
+  const date = new Date(text);
+
+  if (Number.isNaN(date.getTime())) {
+    return "INVALID_DATE";
+  }
+
+  return date.toISOString();
 }
 
 async function loadHistory(orderId: string) {
@@ -114,11 +159,9 @@ export async function PATCH(
     const { id } = await context.params;
     const body = await req.json().catch(() => null);
 
-    const requestedStatus = normalizeOrderStatus(body?.status);
-
-    if (!ORDER_STATUSES.includes(requestedStatus)) {
+    if (!body || typeof body !== "object") {
       return NextResponse.json(
-        { error: "Invalid order status." },
+        { error: "Invalid request body." },
         { status: 400 }
       );
     }
@@ -137,22 +180,60 @@ export async function PATCH(
     }
 
     const oldStatus = normalizeOrderStatus(currentOrder.status);
+    const requestedStatus =
+      body.status === undefined || body.status === null || body.status === ""
+        ? oldStatus
+        : normalizeOrderStatus(body.status);
+
+    if (!ORDER_STATUSES.includes(requestedStatus)) {
+      return NextResponse.json(
+        { error: "Invalid order status." },
+        { status: 400 }
+      );
+    }
+
+    const deliveryMethod = cleanDeliveryMethod(body.delivery_method);
+
+    if (!deliveryMethod.ok) {
+      return NextResponse.json(
+        { error: deliveryMethod.message },
+        { status: 400 }
+      );
+    }
+
+    const expectedDeliveryTime = cleanExpectedDeliveryTime(
+      body.expected_delivery_time
+    );
+
+    if (expectedDeliveryTime === "INVALID_DATE") {
+      return NextResponse.json(
+        { error: "Invalid expected delivery time." },
+        { status: 400 }
+      );
+    }
+
     const changedByEmail = String(admin.user.email || "").trim().toLowerCase();
+
+    const updatePayload = {
+      status: requestedStatus,
+      delivery_method: deliveryMethod.value,
+      rider_name: cleanText(body.rider_name),
+      rider_phone: cleanText(body.rider_phone),
+      delivery_note: cleanText(body.delivery_note),
+      tracking_number: cleanText(body.tracking_number),
+      expected_delivery_time: expectedDeliveryTime,
+    };
 
     const { data, error } = await supabaseAdmin
       .from("orders")
-      .update({
-        status: requestedStatus,
-      })
+      .update(updatePayload)
       .eq("id", id)
-      .select(
-        "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at"
-      )
+      .select(ORDER_SELECT)
       .single();
 
     if (error || !data) {
       return NextResponse.json(
-        { error: error?.message || "Order status update failed." },
+        { error: error?.message || "Order update failed." },
         { status: 500 }
       );
     }
@@ -173,7 +254,7 @@ export async function PATCH(
       history,
       message:
         oldStatus === requestedStatus
-          ? "Order status is already the same."
+          ? "Order updated successfully."
           : "Order status updated successfully.",
     });
   } catch (error: any) {

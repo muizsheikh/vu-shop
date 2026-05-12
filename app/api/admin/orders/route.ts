@@ -6,6 +6,9 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+const ORDER_SELECT =
+  "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at, delivery_method, rider_name, rider_phone, delivery_note, tracking_number, expected_delivery_time";
+
 const authClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: false,
@@ -66,9 +69,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabaseAdmin
       .from("orders")
-      .select(
-        "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at"
-      )
+      .select(ORDER_SELECT)
       .order("created_at", { ascending: false });
 
     if (id) {
@@ -106,6 +107,10 @@ export async function GET(req: NextRequest) {
             order.customer_phone,
             order.city,
             order.status,
+            order.delivery_method,
+            order.rider_name,
+            order.rider_phone,
+            order.tracking_number,
           ]
             .filter(Boolean)
             .some((value) => String(value).toLowerCase().includes(needle));

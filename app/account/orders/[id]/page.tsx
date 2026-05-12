@@ -36,6 +36,12 @@ type OrderRow = {
   address_line1: string | null;
   items: any[] | null;
   created_at: string;
+  delivery_method: string | null;
+  rider_name: string | null;
+  rider_phone: string | null;
+  delivery_note: string | null;
+  tracking_number: string | null;
+  expected_delivery_time: string | null;
 };
 
 const STATUS_STEPS = [
@@ -92,6 +98,20 @@ function getStatusBadgeClass(status: string | null) {
   return "border-green-200 bg-green-50 text-green-700";
 }
 
+function getDeliveryMethodLabel(method: string | null) {
+  const normalized = String(method || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(" ", "_")
+    .replaceAll("-", "_");
+
+  if (normalized === "rider") return "Rider Delivery";
+  if (normalized === "courier") return "Courier Delivery";
+  if (normalized === "pickup") return "Store Pickup";
+
+  return "Not assigned yet";
+}
+
 function formatPKR(value: number) {
   return new Intl.NumberFormat("en-PK").format(Number(value || 0));
 }
@@ -143,7 +163,7 @@ export default function OrderDetailPage() {
       const { data, error } = await supabase
         .from("orders")
         .select(
-          "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at"
+          "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at, delivery_method, rider_name, rider_phone, delivery_note, tracking_number, expected_delivery_time"
         )
         .eq("id", orderId)
         .eq("user_id", user.id)
@@ -201,6 +221,14 @@ export default function OrderDetailPage() {
   const totals = getOrderTotals(order.total_amount);
   const normalizedStatus = normalizeStatus(order.status);
   const isCancelled = normalizedStatus === "cancelled";
+  const hasDeliveryInfo = Boolean(
+    order.delivery_method ||
+      order.rider_name ||
+      order.rider_phone ||
+      order.delivery_note ||
+      order.tracking_number ||
+      order.expected_delivery_time
+  );
 
   const whatsappMessage = encodeURIComponent(
     `Assalam o Alaikum, mujhe apne Vape Ustad order ke bare me help chahiye.\nOrder: ${orderNumber}`
@@ -328,6 +356,91 @@ export default function OrderDetailPage() {
             confirmation, processing, dispatch, and delivery.
           </p>
         </div>
+
+        {hasDeliveryInfo ? (
+          <div className="mt-6 rounded-[26px] border border-blue-200 bg-blue-50/50 p-5">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
+                <Truck className="h-5 w-5" />
+              </div>
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-700">
+                  Delivery
+                </p>
+                <h2 className="text-xl font-black text-neutral-950">
+                  Delivery Information
+                </h2>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-blue-100 bg-white p-4">
+                <div className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                  Delivery Method
+                </div>
+                <div className="mt-2 font-black text-neutral-950">
+                  {getDeliveryMethodLabel(order.delivery_method)}
+                </div>
+              </div>
+
+              {order.expected_delivery_time ? (
+                <div className="rounded-2xl border border-blue-100 bg-white p-4">
+                  <div className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Expected Delivery
+                  </div>
+                  <div className="mt-2 font-black text-neutral-950">
+                    {formatDate(order.expected_delivery_time)}
+                  </div>
+                </div>
+              ) : null}
+
+              {order.rider_name ? (
+                <div className="rounded-2xl border border-blue-100 bg-white p-4">
+                  <div className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Rider / Courier
+                  </div>
+                  <div className="mt-2 font-black text-neutral-950">
+                    {order.rider_name}
+                  </div>
+                </div>
+              ) : null}
+
+              {order.rider_phone ? (
+                <div className="rounded-2xl border border-blue-100 bg-white p-4">
+                  <div className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Contact
+                  </div>
+                  <div className="mt-2 font-black text-neutral-950">
+                    {order.rider_phone}
+                  </div>
+                </div>
+              ) : null}
+
+              {order.tracking_number ? (
+                <div className="rounded-2xl border border-blue-100 bg-white p-4 md:col-span-2">
+                  <div className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Tracking Number
+                  </div>
+                  <div className="mt-2 font-black text-neutral-950">
+                    {order.tracking_number}
+                  </div>
+                </div>
+              ) : null}
+
+              {order.delivery_note ? (
+                <div className="rounded-2xl border border-blue-100 bg-white p-4 md:col-span-2">
+                  <div className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Delivery Note
+                  </div>
+                  <div className="mt-2 whitespace-pre-wrap text-sm font-bold leading-6 text-neutral-700">
+                    {order.delivery_note}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">

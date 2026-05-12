@@ -17,6 +17,7 @@ import {
   NotebookPen,
   PackageCheck,
   Phone,
+  Save,
   ShieldCheck,
   Truck,
   UserRound,
@@ -46,6 +47,12 @@ type OrderRow = {
   address_line1: string | null;
   items: any[] | null;
   created_at: string;
+  delivery_method: string | null;
+  rider_name: string | null;
+  rider_phone: string | null;
+  delivery_note: string | null;
+  tracking_number: string | null;
+  expected_delivery_time: string | null;
 };
 
 type StatusHistoryRow = {
@@ -65,6 +72,15 @@ type AdminNoteRow = {
   created_at: string;
 };
 
+type DeliveryForm = {
+  delivery_method: string;
+  rider_name: string;
+  rider_phone: string;
+  tracking_number: string;
+  expected_delivery_time: string;
+  delivery_note: string;
+};
+
 const STATUS_STEPS = [
   { key: "placed", label: "Placed", icon: CheckCircle2 },
   { key: "confirmed", label: "Confirmed", icon: CheckCircle2 },
@@ -77,7 +93,9 @@ function formatPKR(value: number | null | undefined) {
   return new Intl.NumberFormat("en-PK").format(Number(value || 0));
 }
 
-function formatDate(value: string) {
+function formatDate(value: string | null | undefined) {
+  if (!value) return "Not set";
+
   try {
     return new Date(value).toLocaleString("en-PK", {
       dateStyle: "medium",
@@ -85,6 +103,22 @@ function formatDate(value: string) {
     });
   } catch {
     return value;
+  }
+}
+
+function formatDateTimeLocal(value: string | null | undefined) {
+  if (!value) return "";
+
+  try {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+
+    const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+    const localDate = new Date(date.getTime() - offsetMs);
+
+    return localDate.toISOString().slice(0, 16);
+  } catch {
+    return "";
   }
 }
 
@@ -126,6 +160,20 @@ function getStatusClasses(status: string | null | undefined) {
   return "border-neutral-200 bg-neutral-50 text-neutral-700";
 }
 
+function getDeliveryMethodLabel(method: string | null | undefined) {
+  const normalized = String(method || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(" ", "_")
+    .replaceAll("-", "_");
+
+  if (normalized === "rider") return "Rider Delivery";
+  if (normalized === "courier") return "Courier Delivery";
+  if (normalized === "pickup") return "Store Pickup";
+
+  return "Not Assigned";
+}
+
 function normalizeWhatsappPhone(phone: string | null | undefined) {
   const raw = String(phone || "").replace(/\D/g, "");
 
@@ -165,6 +213,32 @@ function buildWhatsappUrl(phone: string | null | undefined, message: string) {
   return `https://wa.me/${normalizedPhone}?text=${encodedMessage}`;
 }
 
+function buildDeliveryLine(order: OrderRow) {
+  const lines: string[] = [];
+
+  if (order.delivery_method) {
+    lines.push(`Delivery: ${getDeliveryMethodLabel(order.delivery_method)}`);
+  }
+
+  if (order.rider_name) {
+    lines.push(`Rider/Courier: ${order.rider_name}`);
+  }
+
+  if (order.rider_phone) {
+    lines.push(`Contact: ${order.rider_phone}`);
+  }
+
+  if (order.tracking_number) {
+    lines.push(`Tracking: ${order.tracking_number}`);
+  }
+
+  if (order.expected_delivery_time) {
+    lines.push(`Expected: ${formatDate(order.expected_delivery_time)}`);
+  }
+
+  return lines.length ? `\n${lines.join("\n")}\n` : "";
+}
+
 function buildWhatsappMessage(
   order: OrderRow,
   totals: { subtotal: number; delivery: number; total: number },
@@ -178,6 +252,7 @@ function buildWhatsappMessage(
   const name = getCustomerFirstName(order.customer_name);
   const orderNumber = order.sales_order || `Order ${order.id.slice(0, 8)}`;
   const total = `Rs ${formatPKR(totals.total)}`;
+  const deliveryLine = buildDeliveryLine(order);
 
   if (type === "confirmed") {
     return `Assalam o Alaikum ${name},
@@ -214,7 +289,7 @@ Your Vape Ustad order is out for delivery.
 
 Order: ${orderNumber}
 Status: Out for Delivery
-Total: ${total}
+Total: ${total}${deliveryLine}
 
 Please keep your phone available for the rider/courier.
 
@@ -245,6 +320,17 @@ For any question or support, please contact Vape Ustad.
 Thank you.`;
 }
 
+function getDeliveryFormFromOrder(order: OrderRow | null): DeliveryForm {
+  return {
+    delivery_method: order?.delivery_method || "",
+    rider_name: order?.rider_name || "",
+    rider_phone: order?.rider_phone || "",
+    tracking_number: order?.tracking_number || "",
+    expected_delivery_time: formatDateTimeLocal(order?.expected_delivery_time),
+    delivery_note: order?.delivery_note || "",
+  };
+}
+
 export default function AdminOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -265,8 +351,14 @@ export default function AdminOrderDetailPage() {
   const [noteText, setNoteText] = useState("");
 
   const [updating, setUpdating] = useState(false);
+  const [savingDelivery, setSavingDelivery] = useState(false);
   const [errorText, setErrorText] = useState("");
   const [noteErrorText, setNoteErrorText] = useState("");
+  const [deliveryErrorText, setDeliveryErrorText] = useState("");
+  const [deliverySuccessText, setDeliverySuccessText] = useState("");
+  const [deliveryForm, setDeliveryForm] = useState<DeliveryForm>(
+    getDeliveryFormFromOrder(null)
+  );
 
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
@@ -364,7 +456,10 @@ export default function AdminOrderDetailPage() {
         throw new Error(json?.error || "Failed to load order.");
       }
 
-      setOrder(json?.order || null);
+      const loadedOrder = json?.order || null;
+
+      setOrder(loadedOrder);
+      setDeliveryForm(getDeliveryFormFromOrder(loadedOrder));
       await loadHistory();
       await loadNotes();
     } catch (error: any) {
@@ -395,7 +490,15 @@ export default function AdminOrderDetailPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          delivery_method: deliveryForm.delivery_method,
+          rider_name: deliveryForm.rider_name,
+          rider_phone: deliveryForm.rider_phone,
+          tracking_number: deliveryForm.tracking_number,
+          expected_delivery_time: deliveryForm.expected_delivery_time,
+          delivery_note: deliveryForm.delivery_note,
+        }),
       });
 
       const json = await res.json().catch(() => null);
@@ -404,12 +507,68 @@ export default function AdminOrderDetailPage() {
         throw new Error(json?.error || "Status update failed.");
       }
 
-      setOrder(json?.order || null);
+      const updatedOrder = json?.order || null;
+
+      setOrder(updatedOrder);
+      setDeliveryForm(getDeliveryFormFromOrder(updatedOrder));
       setHistory(Array.isArray(json?.history) ? json.history : []);
     } catch (error: any) {
       setErrorText(error?.message || "Status update failed.");
     } finally {
       setUpdating(false);
+    }
+  }
+
+  async function saveDeliveryDetails() {
+    if (!order) return;
+
+    setSavingDelivery(true);
+    setDeliveryErrorText("");
+    setDeliverySuccessText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace(`/account/login?next=/admin/orders/${orderId}`);
+        return;
+      }
+
+      const res = await fetch(`/api/admin/orders/${order.id}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          status: normalizeOrderStatus(order.status),
+          delivery_method: deliveryForm.delivery_method,
+          rider_name: deliveryForm.rider_name,
+          rider_phone: deliveryForm.rider_phone,
+          tracking_number: deliveryForm.tracking_number,
+          expected_delivery_time: deliveryForm.expected_delivery_time,
+          delivery_note: deliveryForm.delivery_note,
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Delivery details update failed.");
+      }
+
+      const updatedOrder = json?.order || null;
+
+      setOrder(updatedOrder);
+      setDeliveryForm(getDeliveryFormFromOrder(updatedOrder));
+      setHistory(Array.isArray(json?.history) ? json.history : []);
+      setDeliverySuccessText("Delivery details saved successfully.");
+    } catch (error: any) {
+      setDeliveryErrorText(
+        error?.message || "Delivery details update failed."
+      );
+    } finally {
+      setSavingDelivery(false);
     }
   }
 
@@ -454,6 +613,16 @@ export default function AdminOrderDetailPage() {
     } finally {
       setSavingNote(false);
     }
+  }
+
+  function updateDeliveryForm(key: keyof DeliveryForm, value: string) {
+    setDeliveryForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
+
+    setDeliveryErrorText("");
+    setDeliverySuccessText("");
   }
 
   useEffect(() => {
@@ -714,6 +883,168 @@ export default function AdminOrderDetailPage() {
               })}
             </div>
           )}
+        </div>
+
+        <div className="mt-6 rounded-[26px] border border-blue-200 bg-blue-50/50 p-5">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
+                <Truck className="h-5 w-5" />
+              </div>
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-blue-700">
+                  Delivery Assignment
+                </p>
+                <h2 className="text-xl font-black text-neutral-950">
+                  Rider / Courier Details
+                </h2>
+              </div>
+            </div>
+
+            <span className="rounded-full border border-blue-200 bg-white px-4 py-2 text-xs font-black uppercase text-blue-700">
+              {getDeliveryMethodLabel(order.delivery_method)}
+            </span>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                Delivery Method
+              </label>
+              <select
+                value={deliveryForm.delivery_method}
+                onChange={(event) =>
+                  updateDeliveryForm("delivery_method", event.target.value)
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition focus:border-blue-500"
+              >
+                <option value="">Not Assigned</option>
+                <option value="rider">Rider Delivery</option>
+                <option value="courier">Courier Delivery</option>
+                <option value="pickup">Store Pickup</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                Expected Delivery Time
+              </label>
+              <input
+                type="datetime-local"
+                value={deliveryForm.expected_delivery_time}
+                onChange={(event) =>
+                  updateDeliveryForm(
+                    "expected_delivery_time",
+                    event.target.value
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                Rider / Courier Name
+              </label>
+              <input
+                type="text"
+                value={deliveryForm.rider_name}
+                onChange={(event) =>
+                  updateDeliveryForm("rider_name", event.target.value)
+                }
+                placeholder="Example: Ali Rider / TCS / Leopard"
+                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                Rider / Courier Phone
+              </label>
+              <input
+                type="text"
+                value={deliveryForm.rider_phone}
+                onChange={(event) =>
+                  updateDeliveryForm("rider_phone", event.target.value)
+                }
+                placeholder="Example: 03001234567"
+                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                Tracking Number / Courier ID
+              </label>
+              <input
+                type="text"
+                value={deliveryForm.tracking_number}
+                onChange={(event) =>
+                  updateDeliveryForm("tracking_number", event.target.value)
+                }
+                placeholder="Example: TCS123456 / Rider token / manual reference"
+                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                Delivery Note
+              </label>
+              <textarea
+                value={deliveryForm.delivery_note}
+                onChange={(event) =>
+                  updateDeliveryForm("delivery_note", event.target.value)
+                }
+                placeholder="Example: Customer requested evening delivery. Call before dispatch."
+                rows={4}
+                maxLength={1200}
+                className="mt-2 w-full resize-none rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
+              />
+              <div className="mt-2 text-xs font-bold text-neutral-500">
+                {deliveryForm.delivery_note.trim().length}/1200 characters
+              </div>
+            </div>
+          </div>
+
+          {deliveryErrorText ? (
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+              {deliveryErrorText}
+            </div>
+          ) : null}
+
+          {deliverySuccessText ? (
+            <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-bold text-green-700">
+              {deliverySuccessText}
+            </div>
+          ) : null}
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm leading-6 text-neutral-500">
+              Ye details customer order detail page par show ho sakti hain.
+              WhatsApp “Out” message me bhi delivery info include hogi.
+            </p>
+
+            <button
+              type="button"
+              disabled={savingDelivery}
+              onClick={saveDeliveryDetails}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {savingDelivery ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" />
+                  Save Delivery
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         <div className="mt-6 rounded-[26px] border border-green-200 bg-green-50/40 p-5">
