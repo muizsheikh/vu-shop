@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import {
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Download,
   Eye,
@@ -38,6 +40,12 @@ type OrderRow = {
   address_line1: string | null;
   items: any[] | null;
   created_at: string;
+  delivery_method?: string | null;
+  rider_name?: string | null;
+  rider_phone?: string | null;
+  delivery_note?: string | null;
+  tracking_number?: string | null;
+  expected_delivery_time?: string | null;
 };
 
 type AdminUser = {
@@ -64,6 +72,26 @@ type DateFilter =
   | "last_30_days"
   | "all_time";
 
+type PaginationState = {
+  page: number;
+  limit: number;
+  total_count: number;
+  total_pages: number;
+  has_next_page: boolean;
+  has_previous_page: boolean;
+};
+
+type SummaryState = {
+  total: number;
+  pending: number;
+  placed: number;
+  confirmed: number;
+  processing: number;
+  out_for_delivery: number;
+  delivered: number;
+  cancelled: number;
+};
+
 const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "pending", label: "Pending" },
@@ -83,6 +111,28 @@ const DATE_FILTERS: { key: DateFilter; label: string }[] = [
   { key: "all_time", label: "All Time" },
 ];
 
+const LIMIT_OPTIONS = [10, 20, 50, 100];
+
+const DEFAULT_PAGINATION: PaginationState = {
+  page: 1,
+  limit: 20,
+  total_count: 0,
+  total_pages: 1,
+  has_next_page: false,
+  has_previous_page: false,
+};
+
+const DEFAULT_SUMMARY: SummaryState = {
+  total: 0,
+  pending: 0,
+  placed: 0,
+  confirmed: 0,
+  processing: 0,
+  out_for_delivery: 0,
+  delivered: 0,
+  cancelled: 0,
+};
+
 function formatPKR(value: number | null | undefined) {
   return new Intl.NumberFormat("en-PK").format(Number(value || 0));
 }
@@ -98,58 +148,8 @@ function formatDate(value: string) {
   }
 }
 
-function startOfDay(date: Date) {
-  const cloned = new Date(date);
-  cloned.setHours(0, 0, 0, 0);
-  return cloned;
-}
-
-function endOfDay(date: Date) {
-  const cloned = new Date(date);
-  cloned.setHours(23, 59, 59, 999);
-  return cloned;
-}
-
-function isOrderInDateFilter(value: string, filter: DateFilter) {
-  if (filter === "all_time") return true;
-
-  const orderDate = new Date(value);
-  const now = new Date();
-
-  if (Number.isNaN(orderDate.getTime())) return false;
-
-  if (filter === "today") {
-    return orderDate >= startOfDay(now) && orderDate <= endOfDay(now);
-  }
-
-  if (filter === "yesterday") {
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    return (
-      orderDate >= startOfDay(yesterday) && orderDate <= endOfDay(yesterday)
-    );
-  }
-
-  if (filter === "last_7_days") {
-    const start = startOfDay(new Date(now));
-    start.setDate(start.getDate() - 6);
-
-    return orderDate >= start && orderDate <= endOfDay(now);
-  }
-
-  if (filter === "last_30_days") {
-    const start = startOfDay(new Date(now));
-    start.setDate(start.getDate() - 29);
-
-    return orderDate >= start && orderDate <= endOfDay(now);
-  }
-
-  return true;
-}
-
 function getDateFilterLabel(filter: DateFilter) {
-  return DATE_FILTERS.find((item) => item.key === filter)?.label || "Today";
+  return DATE_FILTERS.find((item) => item.key === filter)?.label || "All Time";
 }
 
 function isValidStatusFilter(value: string | null): value is StatusFilter {
@@ -158,17 +158,6 @@ function isValidStatusFilter(value: string | null): value is StatusFilter {
 
 function isValidDateFilter(value: string | null): value is DateFilter {
   return DATE_FILTERS.some((filter) => filter.key === value);
-}
-
-function isPendingStatus(status: string | null | undefined) {
-  const normalized = normalizeOrderStatus(status);
-
-  return (
-    normalized === "placed" ||
-    normalized === "confirmed" ||
-    normalized === "processing" ||
-    normalized === "out_for_delivery"
-  );
 }
 
 function getStatusClasses(status: string | null | undefined) {
@@ -294,10 +283,34 @@ function getInitialDateFilter(): DateFilter {
   return isValidDateFilter(date) ? date : "all_time";
 }
 
+function getInitialPage() {
+  if (typeof window === "undefined") return 1;
+
+  const params = new URLSearchParams(window.location.search);
+  const page = Number(params.get("page") || "1");
+
+  if (!Number.isFinite(page) || page < 1) return 1;
+
+  return Math.floor(page);
+}
+
+function getInitialLimit() {
+  if (typeof window === "undefined") return 20;
+
+  const params = new URLSearchParams(window.location.search);
+  const limit = Number(params.get("limit") || "20");
+
+  if (!LIMIT_OPTIONS.includes(limit)) return 20;
+
+  return limit;
+}
+
 function updateBrowserUrl(
   searchValue: string,
   statusValue: StatusFilter,
-  dateValue: DateFilter
+  dateValue: DateFilter,
+  pageValue: number,
+  limitValue: number
 ) {
   if (typeof window === "undefined") return;
 
@@ -313,6 +326,14 @@ function updateBrowserUrl(
 
   if (dateValue !== "all_time") {
     params.set("date", dateValue);
+  }
+
+  if (pageValue > 1) {
+    params.set("page", String(pageValue));
+  }
+
+  if (limitValue !== 20) {
+    params.set("limit", String(limitValue));
   }
 
   const query = params.toString();
@@ -335,7 +356,13 @@ export default function AdminOrdersPage() {
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<StatusFilter>("all");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all_time");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [pagination, setPagination] =
+    useState<PaginationState>(DEFAULT_PAGINATION);
+  const [summary, setSummary] = useState<SummaryState>(DEFAULT_SUMMARY);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [exportingFullCsv, setExportingFullCsv] = useState(false);
   const [errorText, setErrorText] = useState("");
 
   async function getAccessToken() {
@@ -380,23 +407,49 @@ export default function AdminOrdersPage() {
     return token;
   }
 
-  async function loadOrders(searchValue = "", tokenFromCheck?: string) {
+  async function loadOrders(options?: {
+    searchValue?: string;
+    statusValue?: StatusFilter;
+    dateValue?: DateFilter;
+    pageValue?: number;
+    limitValue?: number;
+    tokenFromCheck?: string;
+  }) {
     setLoadingOrders(true);
     setErrorText("");
 
+    const nextSearch = options?.searchValue ?? search;
+    const nextStatus = options?.statusValue ?? activeFilter;
+    const nextDate = options?.dateValue ?? dateFilter;
+    const nextPage = options?.pageValue ?? page;
+    const nextLimit = options?.limitValue ?? limit;
+
     try {
-      const token = tokenFromCheck || (await getAccessToken());
+      const token = options?.tokenFromCheck || (await getAccessToken());
 
       if (!token) {
         router.replace("/account/login?next=/admin/orders");
         return;
       }
 
-      const qs = searchValue.trim()
-        ? `?search=${encodeURIComponent(searchValue.trim())}`
-        : "";
+      const params = new URLSearchParams();
 
-      const res = await fetch(`/api/admin/orders${qs}`, {
+      if (nextSearch.trim()) {
+        params.set("search", nextSearch.trim());
+      }
+
+      if (nextStatus !== "all") {
+        params.set("status", nextStatus);
+      }
+
+      if (nextDate !== "all_time") {
+        params.set("date", nextDate);
+      }
+
+      params.set("page", String(nextPage));
+      params.set("limit", String(nextLimit));
+
+      const res = await fetch(`/api/admin/orders?${params.toString()}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -408,7 +461,13 @@ export default function AdminOrdersPage() {
         throw new Error(json?.error || "Failed to load admin orders.");
       }
 
+      const nextPagination = json?.pagination || DEFAULT_PAGINATION;
+
       setOrders(Array.isArray(json?.orders) ? json.orders : []);
+      setPagination(nextPagination);
+      setSummary(json?.summary || DEFAULT_SUMMARY);
+      setPage(Number(nextPagination.page || nextPage));
+      setLimit(Number(nextPagination.limit || nextLimit));
 
       if (json?.admin) {
         setAdminUser(json.admin);
@@ -417,6 +476,8 @@ export default function AdminOrdersPage() {
     } catch (error: any) {
       setErrorText(error?.message || "Failed to load admin orders.");
       setOrders([]);
+      setPagination(DEFAULT_PAGINATION);
+      setSummary(DEFAULT_SUMMARY);
     } finally {
       setLoadingOrders(false);
     }
@@ -449,16 +510,12 @@ export default function AdminOrdersPage() {
         throw new Error(json?.error || "Status update failed.");
       }
 
-      const updatedOrder = json?.order as OrderRow;
-
-      setOrders((prev) =>
-        prev.map((order) => (order.id === orderId ? updatedOrder : order))
-      );
-
       if (json?.admin) {
         setAdminUser(json.admin);
         setAdminEmail(json.admin.email || "");
       }
+
+      await loadOrders({ tokenFromCheck: token });
     } catch (error: any) {
       setErrorText(error?.message || "Status update failed.");
     } finally {
@@ -467,29 +524,77 @@ export default function AdminOrdersPage() {
   }
 
   function changeFilter(nextFilter: StatusFilter) {
+    const nextPage = 1;
+
     setActiveFilter(nextFilter);
-    updateBrowserUrl(search, nextFilter, dateFilter);
+    setPage(nextPage);
+    updateBrowserUrl(search, nextFilter, dateFilter, nextPage, limit);
+    loadOrders({
+      statusValue: nextFilter,
+      pageValue: nextPage,
+    });
   }
 
   function changeDateFilter(nextDateFilter: DateFilter) {
+    const nextPage = 1;
+
     setDateFilter(nextDateFilter);
-    updateBrowserUrl(search, activeFilter, nextDateFilter);
+    setPage(nextPage);
+    updateBrowserUrl(search, activeFilter, nextDateFilter, nextPage, limit);
+    loadOrders({
+      dateValue: nextDateFilter,
+      pageValue: nextPage,
+    });
+  }
+
+  function changePage(nextPage: number) {
+    const safePage = Math.max(1, Math.min(nextPage, pagination.total_pages || 1));
+
+    setPage(safePage);
+    updateBrowserUrl(search, activeFilter, dateFilter, safePage, limit);
+    loadOrders({
+      pageValue: safePage,
+    });
+  }
+
+  function changeLimit(nextLimit: number) {
+    const safeLimit = LIMIT_OPTIONS.includes(nextLimit) ? nextLimit : 20;
+    const nextPage = 1;
+
+    setLimit(safeLimit);
+    setPage(nextPage);
+    updateBrowserUrl(search, activeFilter, dateFilter, nextPage, safeLimit);
+    loadOrders({
+      limitValue: safeLimit,
+      pageValue: nextPage,
+    });
   }
 
   function submitSearch(nextSearch: string) {
     const cleanSearch = nextSearch.trim();
+    const nextPage = 1;
 
     setSearch(cleanSearch);
-    updateBrowserUrl(cleanSearch, activeFilter, dateFilter);
-    loadOrders(cleanSearch);
+    setPage(nextPage);
+    updateBrowserUrl(cleanSearch, activeFilter, dateFilter, nextPage, limit);
+    loadOrders({
+      searchValue: cleanSearch,
+      pageValue: nextPage,
+    });
   }
 
   function resetFilters() {
     setSearch("");
     setActiveFilter("all");
     setDateFilter("all_time");
-    updateBrowserUrl("", "all", "all_time");
-    loadOrders("");
+    setPage(1);
+    updateBrowserUrl("", "all", "all_time", 1, limit);
+    loadOrders({
+      searchValue: "",
+      statusValue: "all",
+      dateValue: "all_time",
+      pageValue: 1,
+    });
   }
 
   useEffect(() => {
@@ -499,10 +604,14 @@ export default function AdminOrdersPage() {
       const initialSearch = getInitialSearch();
       const initialStatus = getInitialStatusFilter();
       const initialDate = getInitialDateFilter();
+      const initialPage = getInitialPage();
+      const initialLimit = getInitialLimit();
 
       setSearch(initialSearch);
       setActiveFilter(initialStatus);
       setDateFilter(initialDate);
+      setPage(initialPage);
+      setLimit(initialLimit);
 
       const { data } = await supabase.auth.getUser();
       const user = data.user;
@@ -523,7 +632,14 @@ export default function AdminOrdersPage() {
       setAuthLoading(false);
 
       if (token) {
-        await loadOrders(initialSearch, token);
+        await loadOrders({
+          searchValue: initialSearch,
+          statusValue: initialStatus,
+          dateValue: initialDate,
+          pageValue: initialPage,
+          limitValue: initialLimit,
+          tokenFromCheck: token,
+        });
       }
     }
 
@@ -531,61 +647,17 @@ export default function AdminOrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  const dateFilteredOrders = useMemo(() => {
-    return orders.filter((order) =>
-      isOrderInDateFilter(order.created_at, dateFilter)
-    );
-  }, [orders, dateFilter]);
-
-  const stats = useMemo(() => {
-    return {
-      total: dateFilteredOrders.length,
-      pending: dateFilteredOrders.filter((o) => isPendingStatus(o.status))
-        .length,
-      placed: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "placed"
-      ).length,
-      confirmed: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "confirmed"
-      ).length,
-      processing: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "processing"
-      ).length,
-      outForDelivery: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "out_for_delivery"
-      ).length,
-      delivered: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "delivered"
-      ).length,
-      cancelled: dateFilteredOrders.filter(
-        (o) => normalizeOrderStatus(o.status) === "cancelled"
-      ).length,
-    };
-  }, [dateFilteredOrders]);
-
-  const displayedOrders = useMemo(() => {
-    if (activeFilter === "all") return dateFilteredOrders;
-
-    if (activeFilter === "pending") {
-      return dateFilteredOrders.filter((order) =>
-        isPendingStatus(order.status)
-      );
-    }
-
-    return dateFilteredOrders.filter(
-      (order) => normalizeOrderStatus(order.status) === activeFilter
-    );
-  }, [dateFilteredOrders, activeFilter]);
+  const displayedOrders = orders;
 
   function getFilterCount(filter: StatusFilter) {
-    if (filter === "all") return stats.total;
-    if (filter === "pending") return stats.pending;
-    if (filter === "placed") return stats.placed;
-    if (filter === "confirmed") return stats.confirmed;
-    if (filter === "processing") return stats.processing;
-    if (filter === "out_for_delivery") return stats.outForDelivery;
-    if (filter === "delivered") return stats.delivered;
-    if (filter === "cancelled") return stats.cancelled;
+    if (filter === "all") return summary.total;
+    if (filter === "pending") return summary.pending;
+    if (filter === "placed") return summary.placed;
+    if (filter === "confirmed") return summary.confirmed;
+    if (filter === "processing") return summary.processing;
+    if (filter === "out_for_delivery") return summary.out_for_delivery;
+    if (filter === "delivered") return summary.delivered;
+    if (filter === "cancelled") return summary.cancelled;
     return 0;
   }
 
@@ -654,7 +726,78 @@ export default function AdminOrdersPage() {
     URL.revokeObjectURL(url);
   }
 
+
+
+  async function exportFullOrdersCsv() {
+    setExportingFullCsv(true);
+    setErrorText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace("/account/login?next=/admin/orders");
+        return;
+      }
+
+      const params = new URLSearchParams();
+
+      if (search.trim()) {
+        params.set("search", search.trim());
+      }
+
+      if (activeFilter !== "all") {
+        params.set("status", activeFilter);
+      }
+
+      if (dateFilter !== "all_time") {
+        params.set("date", dateFilter);
+      }
+
+      const res = await fetch(`/api/admin/orders/export?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || "Full CSV export failed.");
+      }
+
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get("content-disposition") || "";
+      const fileNameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+      const fileName =
+        fileNameMatch?.[1] ||
+        getExportFileName(dateFilter, activeFilter, search).replace(
+          "vape-ustad-orders_",
+          "vape-ustad-orders-full_"
+        );
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      setErrorText(error?.message || "Full CSV export failed.");
+    } finally {
+      setExportingFullCsv(false);
+    }
+  }
+
   const selectedDateLabel = getDateFilterLabel(dateFilter);
+  const pageStart =
+    pagination.total_count === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1;
+  const pageEnd = Math.min(
+    pagination.page * pagination.limit,
+    pagination.total_count
+  );
 
   if (authLoading) {
     return (
@@ -710,9 +853,8 @@ export default function AdminOrdersPage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-              Yahan se website/customer app orders ka status update hoga.
-              Customer ke order detail page par tracking timeline instantly
-              updated show hogi.
+              Orders ab server-side search, status filter, date filter aur
+              pagination ke sath load ho rahe hain.
             </p>
           </div>
 
@@ -741,132 +883,50 @@ export default function AdminOrdersPage() {
           </span>
 
           <span className="rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-black uppercase text-neutral-600">
-            Showing: {displayedOrders.length}
+            Showing: {pageStart}-{pageEnd} of {pagination.total_count}
           </span>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-          <button
-            type="button"
-            onClick={() => changeFilter("all")}
-            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
-              activeFilter === "all",
-              "all"
-            )}`}
-          >
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
-              <PackageCheck className="h-4 w-4" />
-              Total
-            </div>
-            <div className="mt-2 text-2xl font-black">{stats.total}</div>
-          </button>
+          {STATUS_FILTERS.map((filter) => {
+            const active = activeFilter === filter.key;
+            const count = getFilterCount(filter.key);
 
-          <button
-            type="button"
-            onClick={() => changeFilter("pending")}
-            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
-              activeFilter === "pending",
-              "pending"
-            )}`}
-          >
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
-              <Clock3 className="h-4 w-4" />
-              Pending
-            </div>
-            <div className="mt-2 text-2xl font-black">{stats.pending}</div>
-          </button>
+            const icon =
+              filter.key === "all" ? (
+                <PackageCheck className="h-4 w-4" />
+              ) : filter.key === "pending" ? (
+                <Clock3 className="h-4 w-4" />
+              ) : filter.key === "placed" ? (
+                <CalendarDays className="h-4 w-4" />
+              ) : filter.key === "confirmed" ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : filter.key === "delivered" ? (
+                <PackageCheck className="h-4 w-4" />
+              ) : filter.key === "cancelled" ? (
+                <XCircle className="h-4 w-4" />
+              ) : (
+                <Truck className="h-4 w-4" />
+              );
 
-          <button
-            type="button"
-            onClick={() => changeFilter("placed")}
-            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
-              activeFilter === "placed",
-              "placed"
-            )}`}
-          >
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
-              <CalendarDays className="h-4 w-4" />
-              Placed
-            </div>
-            <div className="mt-2 text-2xl font-black">{stats.placed}</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => changeFilter("confirmed")}
-            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
-              activeFilter === "confirmed",
-              "confirmed"
-            )}`}
-          >
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
-              <CheckCircle2 className="h-4 w-4" />
-              Confirmed
-            </div>
-            <div className="mt-2 text-2xl font-black">{stats.confirmed}</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => changeFilter("processing")}
-            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
-              activeFilter === "processing",
-              "processing"
-            )}`}
-          >
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
-              <Truck className="h-4 w-4" />
-              Processing
-            </div>
-            <div className="mt-2 text-2xl font-black">{stats.processing}</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => changeFilter("out_for_delivery")}
-            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
-              activeFilter === "out_for_delivery",
-              "out_for_delivery"
-            )}`}
-          >
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
-              <Truck className="h-4 w-4" />
-              Out
-            </div>
-            <div className="mt-2 text-2xl font-black">
-              {stats.outForDelivery}
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => changeFilter("delivered")}
-            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
-              activeFilter === "delivered",
-              "delivered"
-            )}`}
-          >
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
-              <PackageCheck className="h-4 w-4" />
-              Delivered
-            </div>
-            <div className="mt-2 text-2xl font-black">{stats.delivered}</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => changeFilter("cancelled")}
-            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
-              activeFilter === "cancelled",
-              "cancelled"
-            )}`}
-          >
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
-              <XCircle className="h-4 w-4" />
-              Cancelled
-            </div>
-            <div className="mt-2 text-2xl font-black">{stats.cancelled}</div>
-          </button>
+            return (
+              <button
+                key={filter.key}
+                type="button"
+                onClick={() => changeFilter(filter.key)}
+                className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
+                  active,
+                  filter.key
+                )}`}
+              >
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+                  {icon}
+                  {filter.key === "out_for_delivery" ? "Out" : filter.label}
+                </div>
+                <div className="mt-2 text-2xl font-black">{count}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -909,6 +969,18 @@ export default function AdminOrdersPage() {
             />
           </div>
 
+          <select
+            value={limit}
+            onChange={(event) => changeLimit(Number(event.target.value))}
+            className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-black text-neutral-800 outline-none focus:border-[#a30105]"
+          >
+            {LIMIT_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option} / page
+              </option>
+            ))}
+          </select>
+
           <button
             type="submit"
             disabled={loadingOrders}
@@ -933,7 +1005,21 @@ export default function AdminOrdersPage() {
             className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-green-200 bg-green-50 px-6 text-sm font-black text-green-700 transition hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Download className="h-4 w-4" />
-            Export CSV
+            Export Page CSV
+          </button>
+
+          <button
+            type="button"
+            disabled={loadingOrders || exportingFullCsv || pagination.total_count === 0}
+            onClick={exportFullOrdersCsv}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] px-6 text-sm font-black text-[#a30105] transition hover:bg-[#fff1f1] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {exportingFullCsv ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {exportingFullCsv ? "Exporting..." : "Export Full CSV"}
           </button>
         </form>
 
@@ -965,6 +1051,46 @@ export default function AdminOrdersPage() {
       </div>
 
       <div className="rounded-[30px] border border-neutral-200 bg-white p-4 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm font-bold text-neutral-600">
+            Page{" "}
+            <span className="font-black text-neutral-950">
+              {pagination.page}
+            </span>{" "}
+            of{" "}
+            <span className="font-black text-neutral-950">
+              {pagination.total_pages}
+            </span>{" "}
+            • Total{" "}
+            <span className="font-black text-neutral-950">
+              {pagination.total_count}
+            </span>{" "}
+            orders
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={loadingOrders || !pagination.has_previous_page}
+              onClick={() => changePage(pagination.page - 1)}
+              className="inline-flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </button>
+
+            <button
+              type="button"
+              disabled={loadingOrders || !pagination.has_next_page}
+              onClick={() => changePage(pagination.page + 1)}
+              className="inline-flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
         {loadingOrders ? (
           <div className="p-10 text-center">
             <Loader2 className="mx-auto h-7 w-7 animate-spin text-[#a30105]" />
@@ -1101,6 +1227,34 @@ export default function AdminOrdersPage() {
             </table>
           </div>
         )}
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm font-bold text-neutral-600">
+            Showing {pageStart}-{pageEnd} of {pagination.total_count}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={loadingOrders || !pagination.has_previous_page}
+              onClick={() => changePage(pagination.page - 1)}
+              className="inline-flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </button>
+
+            <button
+              type="button"
+              disabled={loadingOrders || !pagination.has_next_page}
+              onClick={() => changePage(pagination.page + 1)}
+              className="inline-flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
