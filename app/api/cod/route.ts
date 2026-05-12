@@ -9,6 +9,7 @@ const DEFAULT_COUNTRY = "Pakistan";
 const DELIVERY_ITEM_CODE = "DELIVERY-CHARGES";
 const DELIVERY_ITEM_NAME = "Delivery Charges";
 const DELIVERY_CHARGE = 200;
+const MAX_CUSTOMER_NOTE_LENGTH = 500;
 
 const PREFERRED_CUSTOMER_GROUPS = [
   process.env.ERP_CUSTOMER_GROUP || "",
@@ -110,6 +111,10 @@ function sanitizeEmail(value: unknown) {
 
 function sanitizePhone(value: unknown) {
   return sanitizeString(value).slice(0, 50);
+}
+
+function sanitizeCustomerNote(value: unknown) {
+  return sanitizeString(value).slice(0, MAX_CUSTOMER_NOTE_LENGTH);
 }
 
 function sanitizeQty(value: unknown) {
@@ -437,7 +442,8 @@ function buildSalesOrderItems(items: NormalizedCartItem[]) {
 
 function buildOrderRemarks(
   items: NormalizedCartItem[],
-  customer: { name: string; email: string; phone?: string }
+  customer: { name: string; email: string; phone?: string },
+  customerNote?: string
 ) {
   const productTotal = items.reduce((sum, it) => sum + it.amount, 0);
   const grandTotal = productTotal + DELIVERY_CHARGE;
@@ -453,6 +459,7 @@ function buildOrderRemarks(
     `Customer: ${customer.name}`,
     `Email: ${customer.email}`,
     customer.phone ? `Phone: ${customer.phone}` : "",
+    customerNote ? `Customer Note: ${customerNote}` : "",
     "",
     ...lines,
     "",
@@ -477,6 +484,7 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     const items = normalizeCartItems(body?.items);
+    const customerNote = sanitizeCustomerNote(body?.customer_note);
 
     const customerName = sanitizeString(
       body?.customer?.name,
@@ -522,11 +530,15 @@ export async function POST(req: Request) {
       currency: DEFAULT_CURRENCY,
       conversion_rate: 1,
       items: buildSalesOrderItems(items),
-      remarks: buildOrderRemarks(items, {
-        name: customerName,
-        email: customerEmail,
-        phone: customerPhone || undefined,
-      }),
+      remarks: buildOrderRemarks(
+        items,
+        {
+          name: customerName,
+          email: customerEmail,
+          phone: customerPhone || undefined,
+        },
+        customerNote || undefined
+      ),
     };
 
     if (shippingAddressName) {

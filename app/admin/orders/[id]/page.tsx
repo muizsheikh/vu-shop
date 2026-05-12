@@ -44,6 +44,7 @@ type OrderRow = {
   customer_phone: string | null;
   city: string | null;
   address_line1: string | null;
+  customer_note: string | null;
   items: any[] | null;
   created_at: string;
   delivery_method: string | null;
@@ -1051,6 +1052,31 @@ export default function AdminOrderDetailPage() {
             </div>
           )}
         </div>
+
+        {order.customer_note ? (
+          <div className="mt-6 rounded-[26px] border border-purple-200 bg-purple-50/50 p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-100 text-purple-700">
+                <NotebookPen className="h-5 w-5" />
+              </div>
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-purple-700">
+                  Customer Note
+                </p>
+                <h2 className="text-xl font-black text-neutral-950">
+                  Special Instructions
+                </h2>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-purple-100 bg-white p-4">
+              <div className="whitespace-pre-wrap text-sm font-bold leading-6 text-neutral-700">
+                {order.customer_note}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-6 rounded-[26px] border border-blue-200 bg-blue-50/50 p-5">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

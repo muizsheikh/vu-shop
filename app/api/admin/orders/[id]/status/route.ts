@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  normalizeOrderStatus,
-  ORDER_STATUSES,
-} from "@/lib/admin";
+import { normalizeOrderStatus, ORDER_STATUSES } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getAdminUserFromRequest } from "@/lib/adminAuth";
 
 const ORDER_SELECT =
-  "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at, delivery_method, rider_name, rider_phone, delivery_note, tracking_number, expected_delivery_time";
+  "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, customer_note, items, created_at, delivery_method, rider_name, rider_phone, delivery_note, tracking_number, expected_delivery_time";
 
 const DELIVERY_METHODS = ["", "rider", "courier", "pickup"];
 

@@ -9,6 +9,7 @@ import {
   Edit3,
   Loader2,
   LockKeyhole,
+  NotebookPen,
   PackageCheck,
   ShoppingCart,
   UserRound,
@@ -18,6 +19,8 @@ import { useCartStore } from "@/store/cart";
 import { supabase } from "@/lib/supabaseClient";
 
 const DELIVERY_CHARGE = 200;
+
+const MAX_CUSTOMER_NOTE_LENGTH = 500;
 
 type ApiError = {
   error?: string;
@@ -87,6 +90,7 @@ export default function CheckoutClient() {
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
+  const [customerNote, setCustomerNote] = useState("");
 
   const [errors, setErrors] = useState<FormErrors>({});
 
@@ -207,6 +211,7 @@ export default function CheckoutClient() {
       await saveProfileChanges();
 
       const normalizedPhone = normalizePkPhone(phone);
+      const cleanCustomerNote = customerNote.trim().slice(0, MAX_CUSTOMER_NOTE_LENGTH);
 
       const payload = {
         items: items.map((it) => ({
@@ -224,6 +229,7 @@ export default function CheckoutClient() {
           country: "Pakistan",
         },
         delivery_charge: DELIVERY_CHARGE,
+        customer_note: cleanCustomerNote,
       };
 
       const res = await fetch("/api/cod", {
@@ -255,6 +261,7 @@ export default function CheckoutClient() {
         customer_phone: normalizedPhone,
         city: city.trim(),
         address_line1: address.trim(),
+        customer_note: cleanCustomerNote || null,
         items: items.map((it) => ({
           id: it.id,
           name: it.name,
@@ -558,6 +565,32 @@ export default function CheckoutClient() {
                     <p className="mt-2 text-sm text-red-600">{errors.city}</p>
                   ) : null}
                 </div>
+
+                <div>
+                  <label className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-700">
+                    <NotebookPen className="h-4 w-4 text-[#a30105]" />
+                    Order Note / Special Instructions
+                  </label>
+                  <textarea
+                    value={customerNote}
+                    onChange={(e) =>
+                      setCustomerNote(
+                        e.target.value.slice(0, MAX_CUSTOMER_NOTE_LENGTH)
+                      )
+                    }
+                    placeholder="Example: Call before delivery, evening delivery please, gift packing..."
+                    disabled={loading}
+                    rows={4}
+                    maxLength={MAX_CUSTOMER_NOTE_LENGTH}
+                    className="w-full resize-none rounded-2xl border border-neutral-200 bg-white px-4 py-3.5 text-[15px] text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-neutral-300 focus:ring-4 focus:ring-neutral-100"
+                  />
+                  <div className="mt-2 flex items-center justify-between gap-3 text-xs text-neutral-500">
+                    <span>Optional. This note will be visible to admin and support.</span>
+                    <span className="font-bold">
+                      {customerNote.trim().length}/{MAX_CUSTOMER_NOTE_LENGTH}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -603,6 +636,18 @@ export default function CheckoutClient() {
                     </div>
                   ))}
                 </div>
+
+                {customerNote.trim() ? (
+                  <div className="mt-5 rounded-2xl border border-purple-200 bg-purple-50 p-4">
+                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-purple-700">
+                      <NotebookPen className="h-4 w-4" />
+                      Your Note
+                    </div>
+                    <div className="mt-2 line-clamp-4 whitespace-pre-wrap text-sm font-semibold leading-6 text-neutral-700">
+                      {customerNote.trim()}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="mt-5 space-y-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
                   <div className="flex items-center justify-between text-sm text-neutral-600">
