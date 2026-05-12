@@ -5,7 +5,6 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
 const DELIVERY_CHARGE = 200;
-const ADMIN_EMAILS = ["info@vapeustad.com", "muizsheikh@gmail.com"];
 
 type Profile = {
   full_name: string | null;
@@ -25,6 +24,13 @@ type OrderRow = {
   items: any[] | null;
 };
 
+type AdminUser = {
+  id: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+};
+
 function formatPKR(value: number) {
   return new Intl.NumberFormat("en-PK").format(Number(value || 0));
 }
@@ -38,14 +44,6 @@ function formatDate(value: string) {
   } catch {
     return value;
   }
-}
-
-function normalizeEmail(email: string | null | undefined) {
-  return String(email || "").trim().toLowerCase();
-}
-
-function isAdminEmail(email: string | null | undefined) {
-  return ADMIN_EMAILS.includes(normalizeEmail(email));
 }
 
 function normalizeStatus(status: string | null) {
@@ -155,8 +153,42 @@ export default function AccountPage() {
   const [email, setEmail] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
 
-  const adminUser = isAdminEmail(email);
+  const hasAdminAccess = Boolean(adminUser?.is_active && adminUser?.role);
+
+  async function getAccessToken() {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token || "";
+  }
+
+  async function checkAdminAccess() {
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        setAdminUser(null);
+        return;
+      }
+
+      const res = await fetch("/api/admin/me", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok || !json?.allowed) {
+        setAdminUser(null);
+        return;
+      }
+
+      setAdminUser(json.user || null);
+    } catch {
+      setAdminUser(null);
+    }
+  }
 
   useEffect(() => {
     async function loadAccount() {
@@ -189,6 +221,9 @@ export default function AccountPage() {
         .order("created_at", { ascending: false });
 
       setOrders((orderData || []) as OrderRow[]);
+
+      await checkAdminAccess();
+
       setLoading(false);
     }
 
@@ -250,15 +285,21 @@ export default function AccountPage() {
             </h1>
             <p className="mt-1 text-sm text-neutral-500">{email}</p>
 
-            {adminUser ? (
-              <div className="mt-3 inline-flex rounded-full border border-[#a30105]/20 bg-[#fff7f7] px-3 py-1 text-xs font-black uppercase tracking-wider text-[#a30105]">
-                Admin Access Enabled
+            {hasAdminAccess ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <div className="inline-flex rounded-full border border-[#a30105]/20 bg-[#fff7f7] px-3 py-1 text-xs font-black uppercase tracking-wider text-[#a30105]">
+                  Admin Access Enabled
+                </div>
+
+                <div className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black uppercase tracking-wider text-blue-700">
+                  Role: {adminUser?.role || "admin"}
+                </div>
               </div>
             ) : null}
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {adminUser ? (
+            {hasAdminAccess ? (
               <>
                 <Link
                   href="/admin"
