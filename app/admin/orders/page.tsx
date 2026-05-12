@@ -887,7 +887,7 @@ export default function AdminOrdersPage() {
           </span>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4">
           {STATUS_FILTERS.map((filter) => {
             const active = activeFilter === filter.key;
             const count = getFilterCount(filter.key);
@@ -914,7 +914,7 @@ export default function AdminOrdersPage() {
                 key={filter.key}
                 type="button"
                 onClick={() => changeFilter(filter.key)}
-                className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
+                className={`min-h-[96px] rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
                   active,
                   filter.key
                 )}`}
