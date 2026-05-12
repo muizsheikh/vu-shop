@@ -10,8 +10,11 @@ import {
   Circle,
   Clock3,
   CreditCard,
+  History,
   Loader2,
   MapPin,
+  MessageCircle,
+  NotebookPen,
   PackageCheck,
   Phone,
   ShieldCheck,
@@ -42,6 +45,23 @@ type OrderRow = {
   city: string | null;
   address_line1: string | null;
   items: any[] | null;
+  created_at: string;
+};
+
+type StatusHistoryRow = {
+  id: string;
+  order_id: string;
+  old_status: string | null;
+  new_status: string;
+  changed_by_email: string | null;
+  created_at: string;
+};
+
+type AdminNoteRow = {
+  id: string;
+  order_id: string;
+  note: string;
+  created_by_email: string | null;
   created_at: string;
 };
 
@@ -106,6 +126,125 @@ function getStatusClasses(status: string | null | undefined) {
   return "border-neutral-200 bg-neutral-50 text-neutral-700";
 }
 
+function normalizeWhatsappPhone(phone: string | null | undefined) {
+  const raw = String(phone || "").replace(/\D/g, "");
+
+  if (!raw) return "";
+
+  if (raw.startsWith("92")) {
+    return raw;
+  }
+
+  if (raw.startsWith("0")) {
+    return `92${raw.slice(1)}`;
+  }
+
+  if (raw.length === 10 && raw.startsWith("3")) {
+    return `92${raw}`;
+  }
+
+  return raw;
+}
+
+function getCustomerFirstName(name: string | null | undefined) {
+  const cleanName = String(name || "Customer").trim();
+
+  if (!cleanName) return "Customer";
+
+  return cleanName.split(" ")[0] || cleanName;
+}
+
+function buildWhatsappUrl(phone: string | null | undefined, message: string) {
+  const normalizedPhone = normalizeWhatsappPhone(phone);
+  const encodedMessage = encodeURIComponent(message);
+
+  if (!normalizedPhone) {
+    return `https://wa.me/?text=${encodedMessage}`;
+  }
+
+  return `https://wa.me/${normalizedPhone}?text=${encodedMessage}`;
+}
+
+function buildWhatsappMessage(
+  order: OrderRow,
+  totals: { subtotal: number; delivery: number; total: number },
+  type:
+    | "confirmed"
+    | "processing"
+    | "out_for_delivery"
+    | "delivered"
+    | "cancelled"
+) {
+  const name = getCustomerFirstName(order.customer_name);
+  const orderNumber = order.sales_order || `Order ${order.id.slice(0, 8)}`;
+  const total = `Rs ${formatPKR(totals.total)}`;
+
+  if (type === "confirmed") {
+    return `Assalam o Alaikum ${name},
+
+Your Vape Ustad order has been confirmed.
+
+Order: ${orderNumber}
+Status: Confirmed
+Total: ${total}
+
+Our team will start preparing your order shortly.
+
+Thank you for shopping with Vape Ustad.`;
+  }
+
+  if (type === "processing") {
+    return `Assalam o Alaikum ${name},
+
+Your Vape Ustad order is now being prepared.
+
+Order: ${orderNumber}
+Status: Processing
+Total: ${total}
+
+We will update you once your order is ready for delivery.
+
+Thank you for shopping with Vape Ustad.`;
+  }
+
+  if (type === "out_for_delivery") {
+    return `Assalam o Alaikum ${name},
+
+Your Vape Ustad order is out for delivery.
+
+Order: ${orderNumber}
+Status: Out for Delivery
+Total: ${total}
+
+Please keep your phone available for the rider/courier.
+
+Thank you for shopping with Vape Ustad.`;
+  }
+
+  if (type === "delivered") {
+    return `Assalam o Alaikum ${name},
+
+Your Vape Ustad order has been delivered.
+
+Order: ${orderNumber}
+Status: Delivered
+Total: ${total}
+
+Thank you for shopping with Vape Ustad. We hope to serve you again soon.`;
+  }
+
+  return `Assalam o Alaikum ${name},
+
+Your Vape Ustad order has been cancelled.
+
+Order: ${orderNumber}
+Status: Cancelled
+
+For any question or support, please contact Vape Ustad.
+
+Thank you.`;
+}
+
 export default function AdminOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -116,13 +255,86 @@ export default function AdminOrderDetailPage() {
   const [adminEmail, setAdminEmail] = useState("");
 
   const [loadingOrder, setLoadingOrder] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingNotes, setLoadingNotes] = useState(false);
+  const [savingNote, setSavingNote] = useState(false);
+
   const [order, setOrder] = useState<OrderRow | null>(null);
+  const [history, setHistory] = useState<StatusHistoryRow[]>([]);
+  const [notes, setNotes] = useState<AdminNoteRow[]>([]);
+  const [noteText, setNoteText] = useState("");
+
   const [updating, setUpdating] = useState(false);
   const [errorText, setErrorText] = useState("");
+  const [noteErrorText, setNoteErrorText] = useState("");
 
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token || "";
+  }
+
+  async function loadHistory() {
+    setLoadingHistory(true);
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace(`/account/login?next=/admin/orders/${orderId}`);
+        return;
+      }
+
+      const res = await fetch(`/api/admin/orders/${orderId}/status`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to load status history.");
+      }
+
+      setHistory(Array.isArray(json?.history) ? json.history : []);
+    } catch {
+      setHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
+
+  async function loadNotes() {
+    setLoadingNotes(true);
+    setNoteErrorText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace(`/account/login?next=/admin/orders/${orderId}`);
+        return;
+      }
+
+      const res = await fetch(`/api/admin/orders/${orderId}/notes`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to load admin notes.");
+      }
+
+      setNotes(Array.isArray(json?.notes) ? json.notes : []);
+    } catch (error: any) {
+      setNoteErrorText(error?.message || "Failed to load admin notes.");
+      setNotes([]);
+    } finally {
+      setLoadingNotes(false);
+    }
   }
 
   async function loadOrder() {
@@ -153,6 +365,8 @@ export default function AdminOrderDetailPage() {
       }
 
       setOrder(json?.order || null);
+      await loadHistory();
+      await loadNotes();
     } catch (error: any) {
       setErrorText(error?.message || "Failed to load order.");
       setOrder(null);
@@ -191,10 +405,54 @@ export default function AdminOrderDetailPage() {
       }
 
       setOrder(json?.order || null);
+      setHistory(Array.isArray(json?.history) ? json.history : []);
     } catch (error: any) {
       setErrorText(error?.message || "Status update failed.");
     } finally {
       setUpdating(false);
+    }
+  }
+
+  async function saveAdminNote() {
+    const cleanNote = noteText.trim();
+
+    if (!cleanNote) {
+      setNoteErrorText("Note likhna zaroori hai.");
+      return;
+    }
+
+    setSavingNote(true);
+    setNoteErrorText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace(`/account/login?next=/admin/orders/${orderId}`);
+        return;
+      }
+
+      const res = await fetch(`/api/admin/orders/${orderId}/notes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ note: cleanNote }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to save admin note.");
+      }
+
+      setNotes(Array.isArray(json?.notes) ? json.notes : []);
+      setNoteText("");
+    } catch (error: any) {
+      setNoteErrorText(error?.message || "Failed to save admin note.");
+    } finally {
+      setSavingNote(false);
     }
   }
 
@@ -317,6 +575,8 @@ export default function AdminOrderDetailPage() {
   const totals = getOrderTotals(order.total_amount);
   const normalizedStatus = normalizeOrderStatus(order.status);
   const isCancelled = normalizedStatus === "cancelled";
+  const whatsappPhone = normalizeWhatsappPhone(order.customer_phone);
+  const hasWhatsappPhone = Boolean(whatsappPhone);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -452,6 +712,287 @@ export default function AdminOrderDetailPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 rounded-[26px] border border-green-200 bg-green-50/40 p-5">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-green-100 text-green-700">
+                <MessageCircle className="h-5 w-5" />
+              </div>
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-green-700">
+                  Customer Communication
+                </p>
+                <h2 className="text-xl font-black text-neutral-950">
+                  WhatsApp Actions
+                </h2>
+              </div>
+            </div>
+
+            <span className="rounded-full border border-green-200 bg-white px-4 py-2 text-xs font-black uppercase text-green-700">
+              {hasWhatsappPhone ? `WA: ${whatsappPhone}` : "No Phone"}
+            </span>
+          </div>
+
+          {!hasWhatsappPhone ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-700">
+              Customer phone number missing/invalid hai. Button WhatsApp open
+              karega lekin direct customer chat open nahi hogi.
+            </div>
+          ) : null}
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <a
+              href={buildWhatsappUrl(
+                order.customer_phone,
+                buildWhatsappMessage(order, totals, "confirmed")
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-black text-emerald-700 transition hover:bg-emerald-50"
+            >
+              <MessageCircle className="h-4 w-4" />
+              Confirm
+            </a>
+
+            <a
+              href={buildWhatsappUrl(
+                order.customer_phone,
+                buildWhatsappMessage(order, totals, "processing")
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm font-black text-amber-700 transition hover:bg-amber-50"
+            >
+              <MessageCircle className="h-4 w-4" />
+              Processing
+            </a>
+
+            <a
+              href={buildWhatsappUrl(
+                order.customer_phone,
+                buildWhatsappMessage(order, totals, "out_for_delivery")
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-black text-blue-700 transition hover:bg-blue-50"
+            >
+              <MessageCircle className="h-4 w-4" />
+              Out
+            </a>
+
+            <a
+              href={buildWhatsappUrl(
+                order.customer_phone,
+                buildWhatsappMessage(order, totals, "delivered")
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-green-200 bg-white px-4 py-3 text-sm font-black text-green-700 transition hover:bg-green-50"
+            >
+              <MessageCircle className="h-4 w-4" />
+              Delivered
+            </a>
+
+            <a
+              href={buildWhatsappUrl(
+                order.customer_phone,
+                buildWhatsappMessage(order, totals, "cancelled")
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm font-black text-red-700 transition hover:bg-red-50"
+            >
+              <MessageCircle className="h-4 w-4" />
+              Cancel
+            </a>
+          </div>
+        </div>
+
+        <div className="mt-6 rounded-[26px] border border-[#a30105]/20 bg-[#fff7f7] p-5">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#a30105]/10 text-[#a30105]">
+                <NotebookPen className="h-5 w-5" />
+              </div>
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#a30105]">
+                  Internal Use Only
+                </p>
+                <h2 className="text-xl font-black text-neutral-950">
+                  Admin Notes
+                </h2>
+              </div>
+            </div>
+
+            {loadingNotes ? (
+              <Loader2 className="h-5 w-5 animate-spin text-[#a30105]" />
+            ) : (
+              <span className="rounded-full border border-[#a30105]/15 bg-white px-4 py-2 text-xs font-black uppercase text-[#a30105]">
+                {notes.length} Notes
+              </span>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-[#a30105]/15 bg-white p-4">
+            <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+              Add Internal Note
+            </label>
+
+            <textarea
+              value={noteText}
+              onChange={(event) => setNoteText(event.target.value)}
+              placeholder="Example: Customer requested evening delivery. Address confirmed on call."
+              rows={4}
+              maxLength={1200}
+              className="mt-3 w-full resize-none rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-[#a30105] focus:bg-white"
+            />
+
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-xs font-bold text-neutral-500">
+                {noteText.trim().length}/1200 characters
+              </div>
+
+              <button
+                type="button"
+                disabled={savingNote}
+                onClick={saveAdminNote}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-black text-white transition hover:bg-[#8f0104] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingNote ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <NotebookPen className="h-4 w-4" />
+                    Save Note
+                  </>
+                )}
+              </button>
+            </div>
+
+            {noteErrorText ? (
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+                {noteErrorText}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="mt-5">
+            {notes.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[#a30105]/20 bg-white p-5 text-center text-sm text-neutral-500">
+                Abhi koi internal note nahi hai. Note save karne ke baad yahan
+                show hoga.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {notes.map((note) => (
+                  <div
+                    key={note.id}
+                    className="rounded-2xl border border-neutral-200 bg-white p-4"
+                  >
+                    <div className="whitespace-pre-wrap text-sm font-medium leading-6 text-neutral-800">
+                      {note.note}
+                    </div>
+
+                    <div className="mt-4 flex flex-col gap-2 border-t border-neutral-100 pt-3 text-xs font-bold text-neutral-500 sm:flex-row sm:items-center sm:justify-between">
+                      <span>
+                        Added by{" "}
+                        <span className="text-neutral-900">
+                          {note.created_by_email || "Admin"}
+                        </span>
+                      </span>
+
+                      <span>{formatDate(note.created_at)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-6 rounded-[26px] border border-neutral-200 bg-white p-5">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#a30105]/10 text-[#a30105]">
+                <History className="h-5 w-5" />
+              </div>
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#a30105]">
+                  Audit Log
+                </p>
+                <h2 className="text-xl font-black text-neutral-950">
+                  Status History
+                </h2>
+              </div>
+            </div>
+
+            {loadingHistory ? (
+              <Loader2 className="h-5 w-5 animate-spin text-[#a30105]" />
+            ) : (
+              <span className="rounded-full bg-neutral-50 px-4 py-2 text-xs font-black uppercase text-neutral-600">
+                {history.length} Updates
+              </span>
+            )}
+          </div>
+
+          {history.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-5 text-center text-sm text-neutral-500">
+              Abhi status history available nahi hai. Next status change ke baad
+              yahan audit log show hoga.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {history.map((row) => (
+                <div
+                  key={row.id}
+                  className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${getStatusClasses(
+                          row.old_status
+                        )}`}
+                      >
+                        {getOrderStatusLabel(row.old_status || "placed")}
+                      </span>
+
+                      <span className="text-sm font-black text-neutral-400">
+                        →
+                      </span>
+
+                      <span
+                        className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${getStatusClasses(
+                          row.new_status
+                        )}`}
+                      >
+                        {getOrderStatusLabel(row.new_status)}
+                      </span>
+                    </div>
+
+                    <div className="text-xs font-bold text-neutral-500">
+                      {formatDate(row.created_at)}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 text-sm text-neutral-600">
+                    Changed by{" "}
+                    <span className="font-black text-neutral-950">
+                      {row.changed_by_email || "Admin"}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Download,
   Eye,
   Loader2,
   PackageCheck,
@@ -12,6 +15,7 @@ import {
   ShieldCheck,
   Truck,
   UserRound,
+  XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import {
@@ -37,6 +41,42 @@ type OrderRow = {
   created_at: string;
 };
 
+type StatusFilter =
+  | "all"
+  | "pending"
+  | "placed"
+  | "confirmed"
+  | "processing"
+  | "out_for_delivery"
+  | "delivered"
+  | "cancelled";
+
+type DateFilter =
+  | "today"
+  | "yesterday"
+  | "last_7_days"
+  | "last_30_days"
+  | "all_time";
+
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "pending", label: "Pending" },
+  { key: "placed", label: "Placed" },
+  { key: "confirmed", label: "Confirmed" },
+  { key: "processing", label: "Processing" },
+  { key: "out_for_delivery", label: "Out for Delivery" },
+  { key: "delivered", label: "Delivered" },
+  { key: "cancelled", label: "Cancelled" },
+];
+
+const DATE_FILTERS: { key: DateFilter; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "last_7_days", label: "Last 7 Days" },
+  { key: "last_30_days", label: "Last 30 Days" },
+  { key: "all_time", label: "All Time" },
+];
+
 function formatPKR(value: number | null | undefined) {
   return new Intl.NumberFormat("en-PK").format(Number(value || 0));
 }
@@ -50,6 +90,79 @@ function formatDate(value: string) {
   } catch {
     return value;
   }
+}
+
+function startOfDay(date: Date) {
+  const cloned = new Date(date);
+  cloned.setHours(0, 0, 0, 0);
+  return cloned;
+}
+
+function endOfDay(date: Date) {
+  const cloned = new Date(date);
+  cloned.setHours(23, 59, 59, 999);
+  return cloned;
+}
+
+function isOrderInDateFilter(value: string, filter: DateFilter) {
+  if (filter === "all_time") return true;
+
+  const orderDate = new Date(value);
+  const now = new Date();
+
+  if (Number.isNaN(orderDate.getTime())) return false;
+
+  if (filter === "today") {
+    return orderDate >= startOfDay(now) && orderDate <= endOfDay(now);
+  }
+
+  if (filter === "yesterday") {
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    return (
+      orderDate >= startOfDay(yesterday) && orderDate <= endOfDay(yesterday)
+    );
+  }
+
+  if (filter === "last_7_days") {
+    const start = startOfDay(new Date(now));
+    start.setDate(start.getDate() - 6);
+
+    return orderDate >= start && orderDate <= endOfDay(now);
+  }
+
+  if (filter === "last_30_days") {
+    const start = startOfDay(new Date(now));
+    start.setDate(start.getDate() - 29);
+
+    return orderDate >= start && orderDate <= endOfDay(now);
+  }
+
+  return true;
+}
+
+function getDateFilterLabel(filter: DateFilter) {
+  return DATE_FILTERS.find((item) => item.key === filter)?.label || "Today";
+}
+
+function isValidStatusFilter(value: string | null): value is StatusFilter {
+  return STATUS_FILTERS.some((filter) => filter.key === value);
+}
+
+function isValidDateFilter(value: string | null): value is DateFilter {
+  return DATE_FILTERS.some((filter) => filter.key === value);
+}
+
+function isPendingStatus(status: string | null | undefined) {
+  const normalized = normalizeOrderStatus(status);
+
+  return (
+    normalized === "placed" ||
+    normalized === "confirmed" ||
+    normalized === "processing" ||
+    normalized === "out_for_delivery"
+  );
 }
 
 function getStatusClasses(status: string | null | undefined) {
@@ -78,6 +191,130 @@ function getStatusClasses(status: string | null | undefined) {
   return "border-neutral-200 bg-neutral-50 text-neutral-700";
 }
 
+function getFilterButtonClass(active: boolean, status: StatusFilter) {
+  if (!active) {
+    return "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50";
+  }
+
+  if (status === "cancelled") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (status === "delivered") {
+    return "border-green-200 bg-green-50 text-green-700";
+  }
+
+  if (status === "out_for_delivery") {
+    return "border-blue-200 bg-blue-50 text-blue-700";
+  }
+
+  if (status === "processing" || status === "pending") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+
+  if (status === "confirmed") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  if (status === "placed") {
+    return "border-neutral-300 bg-neutral-100 text-neutral-950";
+  }
+
+  return "border-[#a30105]/25 bg-[#fff7f7] text-[#a30105]";
+}
+
+function getDateFilterButtonClass(active: boolean) {
+  if (active) {
+    return "border-[#a30105]/25 bg-[#fff7f7] text-[#a30105]";
+  }
+
+  return "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50";
+}
+
+function csvCell(value: unknown) {
+  const cleanValue = String(value ?? "")
+    .replace(/\r?\n|\r/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return `"${cleanValue.replaceAll('"', '""')}"`;
+}
+
+function getSafeFilePart(value: string) {
+  return String(value || "all")
+    .trim()
+    .toLowerCase()
+    .replaceAll(" ", "_")
+    .replace(/[^a-z0-9_-]/g, "");
+}
+
+function getExportFileName(
+  dateValue: DateFilter,
+  statusValue: StatusFilter,
+  searchValue: string,
+) {
+  const today = new Date().toISOString().slice(0, 10);
+  const datePart = getSafeFilePart(dateValue);
+  const statusPart = getSafeFilePart(statusValue);
+  const searchPart = searchValue.trim()
+    ? `_${getSafeFilePart(searchValue).slice(0, 30)}`
+    : "";
+
+  return `vape-ustad-orders_${datePart}_${statusPart}${searchPart}_${today}.csv`;
+}
+
+function getInitialSearch() {
+  if (typeof window === "undefined") return "";
+
+  const params = new URLSearchParams(window.location.search);
+  return String(params.get("search") || "").trim();
+}
+
+function getInitialStatusFilter(): StatusFilter {
+  if (typeof window === "undefined") return "all";
+
+  const params = new URLSearchParams(window.location.search);
+  const status = String(params.get("status") || "all").trim();
+
+  return isValidStatusFilter(status) ? status : "all";
+}
+
+function getInitialDateFilter(): DateFilter {
+  if (typeof window === "undefined") return "all_time";
+
+  const params = new URLSearchParams(window.location.search);
+  const date = String(params.get("date") || "all_time").trim();
+
+  return isValidDateFilter(date) ? date : "all_time";
+}
+
+function updateBrowserUrl(
+  searchValue: string,
+  statusValue: StatusFilter,
+  dateValue: DateFilter,
+) {
+  if (typeof window === "undefined") return;
+
+  const params = new URLSearchParams();
+
+  if (searchValue.trim()) {
+    params.set("search", searchValue.trim());
+  }
+
+  if (statusValue !== "all") {
+    params.set("status", statusValue);
+  }
+
+  if (dateValue !== "all_time") {
+    params.set("date", dateValue);
+  }
+
+  const query = params.toString();
+  const nextUrl = query ? `/admin/orders?${query}` : "/admin/orders";
+
+  window.history.replaceState(null, "", nextUrl);
+}
+
 export default function AdminOrdersPage() {
   const router = useRouter();
 
@@ -88,6 +325,8 @@ export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [search, setSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState<StatusFilter>("all");
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all_time");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [errorText, setErrorText] = useState("");
 
@@ -163,7 +402,7 @@ export default function AdminOrdersPage() {
       const updatedOrder = json?.order as OrderRow;
 
       setOrders((prev) =>
-        prev.map((order) => (order.id === orderId ? updatedOrder : order))
+        prev.map((order) => (order.id === orderId ? updatedOrder : order)),
       );
     } catch (error: any) {
       setErrorText(error?.message || "Status update failed.");
@@ -172,19 +411,59 @@ export default function AdminOrdersPage() {
     }
   }
 
+  function changeFilter(nextFilter: StatusFilter) {
+    setActiveFilter(nextFilter);
+    updateBrowserUrl(search, nextFilter, dateFilter);
+  }
+
+  function changeDateFilter(nextDateFilter: DateFilter) {
+    setDateFilter(nextDateFilter);
+    updateBrowserUrl(search, activeFilter, nextDateFilter);
+  }
+
+  function submitSearch(nextSearch: string) {
+    const cleanSearch = nextSearch.trim();
+
+    setSearch(cleanSearch);
+    updateBrowserUrl(cleanSearch, activeFilter, dateFilter);
+    loadOrders(cleanSearch);
+  }
+
+  function resetFilters() {
+    setSearch("");
+    setActiveFilter("all");
+    setDateFilter("all_time");
+    updateBrowserUrl("", "all", "all_time");
+    loadOrders("");
+  }
+
   useEffect(() => {
     async function checkAdmin() {
       setAuthLoading(true);
+
+      const initialSearch = getInitialSearch();
+      const initialStatus = getInitialStatusFilter();
+      const initialDate = getInitialDateFilter();
+
+      setSearch(initialSearch);
+      setActiveFilter(initialStatus);
+      setDateFilter(initialDate);
 
       const { data } = await supabase.auth.getUser();
       const user = data.user;
 
       if (!user) {
-        router.replace("/account/login?next=/admin/orders");
+        const nextQuery = window.location.search
+          ? `/admin/orders${window.location.search}`
+          : "/admin/orders";
+
+        router.replace(`/account/login?next=${encodeURIComponent(nextQuery)}`);
         return;
       }
 
-      const email = String(user.email || "").trim().toLowerCase();
+      const email = String(user.email || "")
+        .trim()
+        .toLowerCase();
       setAdminEmail(email);
 
       if (!isAdminEmail(email)) {
@@ -195,26 +474,137 @@ export default function AdminOrdersPage() {
 
       setAllowed(true);
       setAuthLoading(false);
-      await loadOrders();
+      await loadOrders(initialSearch);
     }
 
     checkAdmin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
+  const dateFilteredOrders = useMemo(() => {
+    return orders.filter((order) =>
+      isOrderInDateFilter(order.created_at, dateFilter),
+    );
+  }, [orders, dateFilter]);
+
   const stats = useMemo(() => {
     return {
-      total: orders.length,
-      placed: orders.filter((o) => normalizeOrderStatus(o.status) === "placed")
+      total: dateFilteredOrders.length,
+      pending: dateFilteredOrders.filter((o) => isPendingStatus(o.status))
         .length,
-      processing: orders.filter(
-        (o) => normalizeOrderStatus(o.status) === "processing"
+      placed: dateFilteredOrders.filter(
+        (o) => normalizeOrderStatus(o.status) === "placed",
       ).length,
-      delivered: orders.filter(
-        (o) => normalizeOrderStatus(o.status) === "delivered"
+      confirmed: dateFilteredOrders.filter(
+        (o) => normalizeOrderStatus(o.status) === "confirmed",
+      ).length,
+      processing: dateFilteredOrders.filter(
+        (o) => normalizeOrderStatus(o.status) === "processing",
+      ).length,
+      outForDelivery: dateFilteredOrders.filter(
+        (o) => normalizeOrderStatus(o.status) === "out_for_delivery",
+      ).length,
+      delivered: dateFilteredOrders.filter(
+        (o) => normalizeOrderStatus(o.status) === "delivered",
+      ).length,
+      cancelled: dateFilteredOrders.filter(
+        (o) => normalizeOrderStatus(o.status) === "cancelled",
       ).length,
     };
-  }, [orders]);
+  }, [dateFilteredOrders]);
+
+  const displayedOrders = useMemo(() => {
+    if (activeFilter === "all") return dateFilteredOrders;
+
+    if (activeFilter === "pending") {
+      return dateFilteredOrders.filter((order) =>
+        isPendingStatus(order.status),
+      );
+    }
+
+    return dateFilteredOrders.filter(
+      (order) => normalizeOrderStatus(order.status) === activeFilter,
+    );
+  }, [dateFilteredOrders, activeFilter]);
+
+  function getFilterCount(filter: StatusFilter) {
+    if (filter === "all") return stats.total;
+    if (filter === "pending") return stats.pending;
+    if (filter === "placed") return stats.placed;
+    if (filter === "confirmed") return stats.confirmed;
+    if (filter === "processing") return stats.processing;
+    if (filter === "out_for_delivery") return stats.outForDelivery;
+    if (filter === "delivered") return stats.delivered;
+    if (filter === "cancelled") return stats.cancelled;
+    return 0;
+  }
+
+  function exportDisplayedOrdersCsv() {
+    const headers = [
+      "Order No",
+      "Date",
+      "Customer",
+      "Email",
+      "Phone",
+      "City",
+      "Address",
+      "Total",
+      "Currency",
+      "Payment",
+      "Status",
+      "Items Count",
+      "Items",
+    ];
+
+    const rows = displayedOrders.map((order) => {
+      const orderNumber = order.sales_order || `Order ${order.id.slice(0, 8)}`;
+      const normalizedStatus = normalizeOrderStatus(order.status);
+      const orderItems = Array.isArray(order.items) ? order.items : [];
+      const itemsText = orderItems
+        .map((item: any) => {
+          const name = item?.name || item?.item_name || item?.id || "Item";
+          const qty = Number(item?.qty || 1);
+          const price = Number(item?.price || 0);
+          return `${name} x ${qty} @ Rs ${formatPKR(price)}`;
+        })
+        .join(" | ");
+
+      return [
+        orderNumber,
+        formatDate(order.created_at),
+        order.customer_name || "Customer",
+        order.customer_email || "",
+        order.customer_phone || "",
+        order.city || "",
+        order.address_line1 || "",
+        Number(order.total_amount || 0),
+        order.currency || "PKR",
+        order.payment_method || "cod",
+        getOrderStatusLabel(normalizedStatus),
+        orderItems.length,
+        itemsText,
+      ];
+    });
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => csvCell(cell)).join(","))
+      .join("\n");
+
+    const blob = new Blob([`\ufeff${csv}`], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = getExportFileName(dateFilter, activeFilter, search);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  const selectedDateLabel = getDateFilterLabel(dateFilter);
 
   if (authLoading) {
     return (
@@ -281,54 +671,175 @@ export default function AdminOrdersPage() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
-              <PackageCheck className="h-4 w-4" />
-              Total Orders
-            </div>
-            <div className="mt-2 text-2xl font-black text-neutral-950">
-              {stats.total}
-            </div>
-          </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <span className="rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-black uppercase text-neutral-600">
+            Search: {search || "None"}
+          </span>
 
-          <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
+          <span className="rounded-full border border-[#a30105]/20 bg-[#fff7f7] px-4 py-2 text-xs font-black uppercase text-[#a30105]">
+            Status: {activeFilter.replaceAll("_", " ")}
+          </span>
+
+          <span className="rounded-full border border-[#a30105]/20 bg-[#fff7f7] px-4 py-2 text-xs font-black uppercase text-[#a30105]">
+            Date: {selectedDateLabel}
+          </span>
+
+          <span className="rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-black uppercase text-neutral-600">
+            Showing: {displayedOrders.length}
+          </span>
+        </div>
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+          <button
+            type="button"
+            onClick={() => changeFilter("all")}
+            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
+              activeFilter === "all",
+              "all",
+            )}`}
+          >
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+              <PackageCheck className="h-4 w-4" />
+              Total
+            </div>
+            <div className="mt-2 text-2xl font-black">{stats.total}</div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => changeFilter("pending")}
+            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
+              activeFilter === "pending",
+              "pending",
+            )}`}
+          >
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+              <Clock3 className="h-4 w-4" />
+              Pending
+            </div>
+            <div className="mt-2 text-2xl font-black">{stats.pending}</div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => changeFilter("placed")}
+            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
+              activeFilter === "placed",
+              "placed",
+            )}`}
+          >
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
               <CalendarDays className="h-4 w-4" />
               Placed
             </div>
-            <div className="mt-2 text-2xl font-black text-neutral-950">
-              {stats.placed}
-            </div>
-          </div>
+            <div className="mt-2 text-2xl font-black">{stats.placed}</div>
+          </button>
 
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-700">
+          <button
+            type="button"
+            onClick={() => changeFilter("confirmed")}
+            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
+              activeFilter === "confirmed",
+              "confirmed",
+            )}`}
+          >
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+              <CheckCircle2 className="h-4 w-4" />
+              Confirmed
+            </div>
+            <div className="mt-2 text-2xl font-black">{stats.confirmed}</div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => changeFilter("processing")}
+            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
+              activeFilter === "processing",
+              "processing",
+            )}`}
+          >
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
               <Truck className="h-4 w-4" />
               Processing
             </div>
-            <div className="mt-2 text-2xl font-black text-amber-800">
-              {stats.processing}
-            </div>
-          </div>
+            <div className="mt-2 text-2xl font-black">{stats.processing}</div>
+          </button>
 
-          <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-green-700">
+          <button
+            type="button"
+            onClick={() => changeFilter("out_for_delivery")}
+            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
+              activeFilter === "out_for_delivery",
+              "out_for_delivery",
+            )}`}
+          >
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+              <Truck className="h-4 w-4" />
+              Out
+            </div>
+            <div className="mt-2 text-2xl font-black">
+              {stats.outForDelivery}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => changeFilter("delivered")}
+            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
+              activeFilter === "delivered",
+              "delivered",
+            )}`}
+          >
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
               <PackageCheck className="h-4 w-4" />
               Delivered
             </div>
-            <div className="mt-2 text-2xl font-black text-green-800">
-              {stats.delivered}
+            <div className="mt-2 text-2xl font-black">{stats.delivered}</div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => changeFilter("cancelled")}
+            className={`rounded-2xl border p-4 text-left transition ${getFilterButtonClass(
+              activeFilter === "cancelled",
+              "cancelled",
+            )}`}
+          >
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+              <XCircle className="h-4 w-4" />
+              Cancelled
             </div>
-          </div>
+            <div className="mt-2 text-2xl font-black">{stats.cancelled}</div>
+          </button>
         </div>
       </div>
 
       <div className="rounded-[30px] border border-neutral-200 bg-white p-4 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+        <div className="mb-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
+          <div className="flex flex-wrap gap-2">
+            {DATE_FILTERS.map((filter) => {
+              const active = dateFilter === filter.key;
+
+              return (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => changeDateFilter(filter.key)}
+                  className={`rounded-full border px-4 py-2 text-xs font-black uppercase transition ${getDateFilterButtonClass(
+                    active,
+                  )}`}
+                >
+                  {filter.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            loadOrders(search);
+            submitSearch(search);
           }}
           className="flex flex-col gap-3 md:flex-row"
         >
@@ -353,15 +864,42 @@ export default function AdminOrdersPage() {
           <button
             type="button"
             disabled={loadingOrders}
-            onClick={() => {
-              setSearch("");
-              loadOrders("");
-            }}
+            onClick={resetFilters}
             className="inline-flex h-12 items-center justify-center rounded-2xl border border-neutral-200 bg-white px-6 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Reset
           </button>
+
+          <button
+            type="button"
+            disabled={loadingOrders || displayedOrders.length === 0}
+            onClick={exportDisplayedOrdersCsv}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-green-200 bg-green-50 px-6 text-sm font-black text-green-700 transition hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download className="h-4 w-4" />
+            Export CSV
+          </button>
         </form>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {STATUS_FILTERS.map((filter) => {
+            const active = activeFilter === filter.key;
+
+            return (
+              <button
+                key={filter.key}
+                type="button"
+                onClick={() => changeFilter(filter.key)}
+                className={`rounded-full border px-4 py-2 text-xs font-black uppercase transition ${getFilterButtonClass(
+                  active,
+                  filter.key,
+                )}`}
+              >
+                {filter.label} ({getFilterCount(filter.key)})
+              </button>
+            );
+          })}
+        </div>
 
         {errorText ? (
           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
@@ -378,13 +916,13 @@ export default function AdminOrdersPage() {
               Loading orders...
             </p>
           </div>
-        ) : orders.length === 0 ? (
+        ) : displayedOrders.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-10 text-center">
             <h2 className="text-xl font-black text-neutral-950">
               No Orders Found
             </h2>
             <p className="mt-2 text-sm text-neutral-500">
-              Search reset kar ke dobara try karo.
+              Search reset karo ya status/date filter change karo.
             </p>
           </div>
         ) : (
@@ -404,7 +942,7 @@ export default function AdminOrdersPage() {
               </thead>
 
               <tbody>
-                {orders.map((order) => {
+                {displayedOrders.map((order) => {
                   const orderNumber =
                     order.sales_order || `Order ${order.id.slice(0, 8)}`;
                   const normalizedStatus = normalizeOrderStatus(order.status);
@@ -460,7 +998,7 @@ export default function AdminOrdersPage() {
                       <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
                         <span
                           className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getStatusClasses(
-                            normalizedStatus
+                            normalizedStatus,
                           )}`}
                         >
                           {getOrderStatusLabel(normalizedStatus)}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
 const DELIVERY_CHARGE = 200;
+const ADMIN_EMAILS = ["info@vapeustad.com", "muizsheikh@gmail.com"];
 
 type Profile = {
   full_name: string | null;
@@ -39,6 +40,14 @@ function formatDate(value: string) {
   }
 }
 
+function normalizeEmail(email: string | null | undefined) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function isAdminEmail(email: string | null | undefined) {
+  return ADMIN_EMAILS.includes(normalizeEmail(email));
+}
+
 function normalizeStatus(status: string | null) {
   return String(status || "placed")
     .trim()
@@ -62,6 +71,73 @@ function getStatusLabel(status: string | null) {
   return labels[normalized] || normalized.replaceAll("_", " ");
 }
 
+function getStatusBadgeClass(status: string | null) {
+  const normalized = normalizeStatus(status);
+
+  if (normalized === "cancelled") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (normalized === "delivered") {
+    return "border-green-200 bg-green-50 text-green-700";
+  }
+
+  if (normalized === "out_for_delivery") {
+    return "border-blue-200 bg-blue-50 text-blue-700";
+  }
+
+  if (normalized === "processing") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+
+  if (normalized === "confirmed") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  return "border-neutral-200 bg-white text-neutral-700";
+}
+
+function getOrderCardClass(status: string | null) {
+  const normalized = normalizeStatus(status);
+
+  if (normalized === "cancelled") {
+    return "border-red-200 bg-red-50/40";
+  }
+
+  if (normalized === "delivered") {
+    return "border-green-200 bg-green-50/35";
+  }
+
+  if (normalized === "out_for_delivery") {
+    return "border-blue-200 bg-blue-50/35";
+  }
+
+  if (normalized === "processing") {
+    return "border-amber-200 bg-amber-50/35";
+  }
+
+  if (normalized === "confirmed") {
+    return "border-emerald-200 bg-emerald-50/30";
+  }
+
+  return "border-neutral-200 bg-neutral-50";
+}
+
+function getStatusMiniText(status: string | null) {
+  const normalized = normalizeStatus(status);
+
+  const messages: Record<string, string> = {
+    placed: "Order received",
+    confirmed: "Order confirmed",
+    processing: "Preparing order",
+    out_for_delivery: "On the way",
+    delivered: "Delivered successfully",
+    cancelled: "Order cancelled",
+  };
+
+  return messages[normalized] || "Order update";
+}
+
 function getOrderTotals(totalAmount: number | null) {
   const total = Number(totalAmount || 0);
   const delivery = total > 0 ? DELIVERY_CHARGE : 0;
@@ -79,6 +155,8 @@ export default function AccountPage() {
   const [email, setEmail] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
+
+  const adminUser = isAdminEmail(email);
 
   useEffect(() => {
     async function loadAccount() {
@@ -171,9 +249,33 @@ export default function AccountPage() {
               {profile?.full_name || "Customer"}
             </h1>
             <p className="mt-1 text-sm text-neutral-500">{email}</p>
+
+            {adminUser ? (
+              <div className="mt-3 inline-flex rounded-full border border-[#a30105]/20 bg-[#fff7f7] px-3 py-1 text-xs font-black uppercase tracking-wider text-[#a30105]">
+                Admin Access Enabled
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {adminUser ? (
+              <>
+                <Link
+                  href="/admin"
+                  className="rounded-2xl bg-[#a30105] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#8f0104]"
+                >
+                  Admin Dashboard
+                </Link>
+
+                <Link
+                  href="/admin/orders"
+                  className="rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] px-4 py-2 text-sm font-bold text-[#a30105] shadow-sm transition hover:bg-[#fff1f1]"
+                >
+                  Manage Orders
+                </Link>
+              </>
+            ) : null}
+
             <Link
               href="/account/profile"
               className="rounded-2xl border border-[#a30105]/15 bg-white px-4 py-2 text-sm font-bold text-neutral-900 transition hover:bg-[#fff7f7]"
@@ -252,7 +354,9 @@ export default function AccountPage() {
               return (
                 <div
                   key={order.id}
-                  className="rounded-[24px] border border-neutral-200 bg-neutral-50 p-4"
+                  className={`rounded-[24px] border p-4 transition ${getOrderCardClass(
+                    order.status
+                  )}`}
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -262,10 +366,17 @@ export default function AccountPage() {
                       <div className="mt-1 text-xs text-neutral-500">
                         {formatDate(order.created_at)}
                       </div>
+                      <div className="mt-2 text-xs font-bold text-neutral-500">
+                        {getStatusMiniText(order.status)}
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      <span className="rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-bold uppercase text-green-700">
+                      <span
+                        className={`rounded-full border px-3 py-1 text-xs font-bold uppercase ${getStatusBadgeClass(
+                          order.status
+                        )}`}
+                      >
                         {getStatusLabel(order.status)}
                       </span>
 

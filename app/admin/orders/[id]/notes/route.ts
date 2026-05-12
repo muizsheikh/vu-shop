@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import {
-  isAdminEmail,
-  normalizeOrderStatus,
-  ORDER_STATUSES,
-} from "@/lib/admin";
+import { isAdminEmail } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -43,7 +39,7 @@ async function getAdminUser(req: NextRequest) {
     return {
       ok: false as const,
       status: 403,
-      message: "You are not allowed to update orders.",
+      message: "You are not allowed to access admin notes.",
     };
   }
 
@@ -53,15 +49,15 @@ async function getAdminUser(req: NextRequest) {
   };
 }
 
-async function loadHistory(orderId: string) {
+async function loadNotes(orderId: string) {
   const { data, error } = await supabaseAdmin
-    .from("order_status_history")
-    .select("id, order_id, old_status, new_status, changed_by_email, created_at")
+    .from("order_admin_notes")
+    .select("id, order_id, note, created_by_email, created_at")
     .eq("order_id", orderId)
     .order("created_at", { ascending: false });
 
   if (error) {
-    return [];
+    throw new Error(error.message || "Failed to load admin notes.");
   }
 
   return data || [];
@@ -82,22 +78,36 @@ export async function GET(
     }
 
     const { id } = await context.params;
-    const history = await loadHistory(id);
 
-    return NextResponse.json({ history });
+    const { data: order, error: orderError } = await supabaseAdmin
+      .from("orders")
+      .select("id")
+      .eq("id", id)
+      .single();
+
+    if (orderError || !order) {
+      return NextResponse.json(
+        { error: orderError?.message || "Order not found." },
+        { status: 404 }
+      );
+    }
+
+    const notes = await loadNotes(id);
+
+    return NextResponse.json({ notes });
   } catch (error: any) {
     return NextResponse.json(
       {
         error:
           error?.message ||
-          "Something went wrong while loading order status history.",
+          "Something went wrong while loading admin notes.",
       },
       { status: 500 }
     );
   }
 }
 
-export async function PATCH(
+export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -113,75 +123,62 @@ export async function PATCH(
 
     const { id } = await context.params;
     const body = await req.json().catch(() => null);
+    const note = String(body?.note || "").trim();
 
-    const requestedStatus = normalizeOrderStatus(body?.status);
-
-    if (!ORDER_STATUSES.includes(requestedStatus)) {
+    if (!note) {
       return NextResponse.json(
-        { error: "Invalid order status." },
+        { error: "Note is required." },
         { status: 400 }
       );
     }
 
-    const { data: currentOrder, error: currentError } = await supabaseAdmin
+    if (note.length > 1200) {
+      return NextResponse.json(
+        { error: "Note is too long. Maximum 1200 characters allowed." },
+        { status: 400 }
+      );
+    }
+
+    const { data: order, error: orderError } = await supabaseAdmin
       .from("orders")
-      .select("id, status")
+      .select("id")
       .eq("id", id)
       .single();
 
-    if (currentError || !currentOrder) {
+    if (orderError || !order) {
       return NextResponse.json(
-        { error: currentError?.message || "Order not found." },
+        { error: orderError?.message || "Order not found." },
         { status: 404 }
       );
     }
 
-    const oldStatus = normalizeOrderStatus(currentOrder.status);
-    const changedByEmail = String(admin.user.email || "").trim().toLowerCase();
+    const createdByEmail = String(admin.user.email || "").trim().toLowerCase();
 
-    const { data, error } = await supabaseAdmin
-      .from("orders")
-      .update({
-        status: requestedStatus,
-      })
-      .eq("id", id)
-      .select(
-        "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at"
-      )
-      .single();
+    const { error } = await supabaseAdmin.from("order_admin_notes").insert({
+      order_id: id,
+      note,
+      created_by_email: createdByEmail,
+    });
 
-    if (error || !data) {
+    if (error) {
       return NextResponse.json(
-        { error: error?.message || "Order status update failed." },
+        { error: error.message || "Failed to save admin note." },
         { status: 500 }
       );
     }
 
-    if (oldStatus !== requestedStatus) {
-      await supabaseAdmin.from("order_status_history").insert({
-        order_id: id,
-        old_status: oldStatus,
-        new_status: requestedStatus,
-        changed_by_email: changedByEmail,
-      });
-    }
-
-    const history = await loadHistory(id);
+    const notes = await loadNotes(id);
 
     return NextResponse.json({
-      order: data,
-      history,
-      message:
-        oldStatus === requestedStatus
-          ? "Order status is already the same."
-          : "Order status updated successfully.",
+      notes,
+      message: "Admin note saved successfully.",
     });
   } catch (error: any) {
     return NextResponse.json(
       {
         error:
           error?.message ||
-          "Something went wrong while updating order status.",
+          "Something went wrong while saving admin note.",
       },
       { status: 500 }
     );
