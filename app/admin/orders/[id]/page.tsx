@@ -26,7 +26,6 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import {
   getOrderStatusLabel,
-  isAdminEmail,
   normalizeOrderStatus,
   ORDER_STATUSES,
 } from "@/lib/admin";
@@ -80,6 +79,13 @@ type DeliveryForm = {
   expected_delivery_time: string;
   delivery_note: string;
 };
+type AdminUser = {
+  id: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+};
+
 
 const STATUS_STEPS = [
   { key: "placed", label: "Placed", icon: CheckCircle2 },
@@ -338,7 +344,9 @@ export default function AdminOrderDetailPage() {
 
   const [authLoading, setAuthLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [adminEmail, setAdminEmail] = useState("");
+  const [accessError, setAccessError] = useState("");
 
   const [loadingOrder, setLoadingOrder] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -365,11 +373,43 @@ export default function AdminOrderDetailPage() {
     return data.session?.access_token || "";
   }
 
-  async function loadHistory() {
+  async function checkAdminAccess() {
+    const token = await getAccessToken();
+
+    if (!token) {
+      router.replace(`/account/login?next=/admin/orders/${orderId}`);
+      return null;
+    }
+
+    const res = await fetch("/api/admin/me", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok || !json?.allowed) {
+      setAllowed(false);
+      setAccessError(json?.error || "Admin access required.");
+      setAdminUser(json?.user || null);
+      setAdminEmail(json?.user?.email || "");
+      return null;
+    }
+
+    const user = json.user as AdminUser;
+    setAllowed(true);
+    setAdminUser(user);
+    setAdminEmail(user.email || "");
+
+    return token;
+  }
+
+  async function loadHistory(tokenFromCheck?: string) {
     setLoadingHistory(true);
 
     try {
-      const token = await getAccessToken();
+      const token = tokenFromCheck || (await getAccessToken());
 
       if (!token) {
         router.replace(`/account/login?next=/admin/orders/${orderId}`);
@@ -396,12 +436,12 @@ export default function AdminOrderDetailPage() {
     }
   }
 
-  async function loadNotes() {
+  async function loadNotes(tokenFromCheck?: string) {
     setLoadingNotes(true);
     setNoteErrorText("");
 
     try {
-      const token = await getAccessToken();
+      const token = tokenFromCheck || (await getAccessToken());
 
       if (!token) {
         router.replace(`/account/login?next=/admin/orders/${orderId}`);
@@ -429,12 +469,12 @@ export default function AdminOrderDetailPage() {
     }
   }
 
-  async function loadOrder() {
+  async function loadOrder(tokenFromCheck?: string) {
     setLoadingOrder(true);
     setErrorText("");
 
     try {
-      const token = await getAccessToken();
+      const token = tokenFromCheck || (await getAccessToken());
 
       if (!token) {
         router.replace(`/account/login?next=/admin/orders/${orderId}`);
@@ -460,8 +500,14 @@ export default function AdminOrderDetailPage() {
 
       setOrder(loadedOrder);
       setDeliveryForm(getDeliveryFormFromOrder(loadedOrder));
-      await loadHistory();
-      await loadNotes();
+
+      if (json?.admin) {
+        setAdminUser(json.admin);
+        setAdminEmail(json.admin.email || "");
+      }
+
+      await loadHistory(token);
+      await loadNotes(token);
     } catch (error: any) {
       setErrorText(error?.message || "Failed to load order.");
       setOrder(null);
@@ -512,6 +558,11 @@ export default function AdminOrderDetailPage() {
       setOrder(updatedOrder);
       setDeliveryForm(getDeliveryFormFromOrder(updatedOrder));
       setHistory(Array.isArray(json?.history) ? json.history : []);
+
+      if (json?.admin) {
+        setAdminUser(json.admin);
+        setAdminEmail(json.admin.email || "");
+      }
     } catch (error: any) {
       setErrorText(error?.message || "Status update failed.");
     } finally {
@@ -562,6 +613,12 @@ export default function AdminOrderDetailPage() {
       setOrder(updatedOrder);
       setDeliveryForm(getDeliveryFormFromOrder(updatedOrder));
       setHistory(Array.isArray(json?.history) ? json.history : []);
+
+      if (json?.admin) {
+        setAdminUser(json.admin);
+        setAdminEmail(json.admin.email || "");
+      }
+
       setDeliverySuccessText("Delivery details saved successfully.");
     } catch (error: any) {
       setDeliveryErrorText(
@@ -607,6 +664,12 @@ export default function AdminOrderDetailPage() {
       }
 
       setNotes(Array.isArray(json?.notes) ? json.notes : []);
+
+      if (json?.admin) {
+        setAdminUser(json.admin);
+        setAdminEmail(json.admin.email || "");
+      }
+
       setNoteText("");
     } catch (error: any) {
       setNoteErrorText(error?.message || "Failed to save admin note.");
@@ -626,7 +689,7 @@ export default function AdminOrderDetailPage() {
   }
 
   useEffect(() => {
-    async function checkAdmin() {
+    async function initAdmin() {
       setAuthLoading(true);
 
       const { data } = await supabase.auth.getUser();
@@ -637,21 +700,18 @@ export default function AdminOrderDetailPage() {
         return;
       }
 
-      const email = String(user.email || "").trim().toLowerCase();
-      setAdminEmail(email);
+      setAdminEmail(String(user.email || "").trim().toLowerCase());
 
-      if (!isAdminEmail(email)) {
-        setAllowed(false);
-        setAuthLoading(false);
-        return;
-      }
+      const token = await checkAdminAccess();
 
-      setAllowed(true);
       setAuthLoading(false);
-      await loadOrder();
+
+      if (token) {
+        await loadOrder(token);
+      }
     }
 
-    if (orderId) checkAdmin();
+    if (orderId) initAdmin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId, router]);
 
@@ -684,7 +744,7 @@ export default function AdminOrderDetailPage() {
         </h1>
 
         <p className="mt-2 text-sm leading-6 text-neutral-500">
-          This account is not allowed to access this admin page.
+          {accessError || "This account is not allowed to access this admin page."}
         </p>
 
         <p className="mt-3 rounded-2xl bg-neutral-50 px-4 py-3 text-xs font-bold text-neutral-600">
@@ -758,8 +818,14 @@ export default function AdminOrderDetailPage() {
           Back to Admin Orders
         </Link>
 
-        <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-2 text-sm font-bold text-green-700">
-          Admin: {adminEmail}
+        <div className="flex flex-wrap gap-2">
+          <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-2 text-sm font-bold text-green-700">
+            Admin: {adminEmail}
+          </div>
+
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold uppercase text-blue-700">
+            Role: {adminUser?.role || "admin"}
+          </div>
         </div>
       </div>
 
