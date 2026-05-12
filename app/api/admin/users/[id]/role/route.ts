@@ -95,17 +95,63 @@ export async function PATCH(
       );
     }
 
+    const { data: currentProfile, error: currentProfileError } =
+      await supabaseAdmin
+        .from("profiles")
+        .select("id, full_name, phone, city, address_line1, role, is_active, updated_at")
+        .eq("id", targetUserId)
+        .maybeSingle();
+
+    if (currentProfileError) {
+      throw new Error(
+        currentProfileError.message || "Failed to load current user profile."
+      );
+    }
+
+    const oldRole = normalizeRole(currentProfile?.role);
+    const oldIsActive = currentProfile?.is_active !== false;
+
+    const finalRole = nextRole !== undefined ? nextRole : oldRole;
+    const finalIsActive =
+      nextIsActive !== undefined ? nextIsActive : oldIsActive;
+
+    const roleChanged = finalRole !== oldRole;
+    const activeChanged = finalIsActive !== oldIsActive;
+
+    if (!roleChanged && !activeChanged) {
+      return NextResponse.json({
+        admin: admin.user,
+        user: {
+          id: targetUser.user.id,
+          email: String(targetUser.user.email || "").trim().toLowerCase(),
+          created_at: targetUser.user.created_at || null,
+          last_sign_in_at: targetUser.user.last_sign_in_at || null,
+          email_confirmed_at: targetUser.user.email_confirmed_at || null,
+          full_name: currentProfile?.full_name || null,
+          phone: currentProfile?.phone || null,
+          city: currentProfile?.city || null,
+          address_line1: currentProfile?.address_line1 || null,
+          role: oldRole,
+          is_active: oldIsActive,
+          profile_updated_at: currentProfile?.updated_at || null,
+          has_profile: Boolean(currentProfile),
+        },
+        audit_logged: false,
+        message: "No changes were required.",
+      });
+    }
+
     const updatePayload: Record<string, any> = {
       id: targetUserId,
       updated_at: new Date().toISOString(),
     };
 
     if (nextRole !== undefined) {
-      updatePayload.role = nextRole;
+      updatePayload.role = finalRole;
     }
 
     if (nextIsActive !== undefined) {
-      updatePayload.is_active = nextIsActive;
+      updatePayload.is_active = finalIsActive;
     }
 
     const { data: updatedProfile, error: updateError } = await supabaseAdmin
@@ -120,8 +166,25 @@ export async function PATCH(
       throw new Error(updateError.message || "Failed to update user profile.");
     }
 
+    const { error: auditError } = await supabaseAdmin
+      .from("user_role_history")
+      .insert({
+        target_user_id: targetUserId,
+        old_role: oldRole,
+        new_role: normalizeRole(updatedProfile?.role),
+        old_is_active: oldIsActive,
+        new_is_active: updatedProfile?.is_active !== false,
+        changed_by_user_id: admin.user.id,
+        changed_by_email: admin.user.email,
+      });
+
+    if (auditError) {
+      throw new Error(auditError.message || "Failed to save user audit log.");
+    }
+
     return NextResponse.json({
       admin: admin.user,
+      audit_logged: true,
       user: {
         id: targetUser.user.id,
         email: String(targetUser.user.email || "").trim().toLowerCase(),
