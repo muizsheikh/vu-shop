@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
+  Eye,
   Loader2,
   Search,
   ShieldCheck,
@@ -623,7 +624,7 @@ export default function AdminUsersPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] border-separate border-spacing-y-3">
+            <table className="w-full min-w-[1320px] border-separate border-spacing-y-3">
               <thead>
                 <tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500">
                   <th className="px-3 py-2">User</th>
@@ -633,6 +634,7 @@ export default function AdminUsersPage() {
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Created</th>
                   <th className="px-3 py-2">Last Sign In</th>
+                  <th className="px-3 py-2">Actions</th>
                 </tr>
               </thead>
 
@@ -781,7 +783,7 @@ export default function AdminUsersPage() {
                         </div>
                       </td>
 
-                      <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                      <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
                         <div className="text-sm font-bold text-neutral-700">
                           {formatDate(user.last_sign_in_at)}
                         </div>
@@ -791,6 +793,16 @@ export default function AdminUsersPage() {
                             Saving...
                           </div>
                         ) : null}
+                      </td>
+
+                      <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <Link
+                          href={`/admin/users/${user.id}`}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#a30105]/20 bg-white px-4 py-2 text-xs font-black uppercase text-[#a30105] transition hover:border-[#a30105] hover:bg-[#fff7f7]"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          View
+                        </Link>
                       </td>
                     </tr>
                   );
