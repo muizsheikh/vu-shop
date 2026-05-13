@@ -16,11 +16,24 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  canManageSettings,
+  canManageUsers,
+  canViewReports,
+  canViewUsers,
+} from "@/lib/admin";
 
 type AdminShellProps = {
   children: ReactNode;
+};
+
+type AdminUser = {
+  id: string;
+  email: string;
+  role: string;
+  is_active: boolean;
 };
 
 type AdminNavItem = {
@@ -29,40 +42,8 @@ type AdminNavItem = {
   icon: any;
   badge?: string;
   disabled?: boolean;
+  hidden?: boolean;
 };
-
-const ADMIN_NAV_ITEMS: AdminNavItem[] = [
-  {
-    label: "Dashboard",
-    href: "/admin",
-    icon: LayoutDashboard,
-  },
-  {
-    label: "Orders",
-    href: "/admin/orders",
-    icon: ClipboardList,
-  },
-  {
-    label: "Users / Roles",
-    href: "/admin/users",
-    icon: UsersRound,
-    badge: "Next",
-  },
-  {
-    label: "Reports",
-    href: "/admin/reports",
-    icon: BarChart3,
-    badge: "Soon",
-    disabled: true,
-  },
-  {
-    label: "Settings",
-    href: "/admin/settings",
-    icon: Settings,
-    badge: "Soon",
-    disabled: true,
-  },
-];
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/admin") {
@@ -85,15 +66,19 @@ function getNavClass(active: boolean, disabled?: boolean) {
 }
 
 function AdminNav({
+  items,
   onNavigate,
   pathname,
 }: {
+  items: AdminNavItem[];
   onNavigate?: () => void;
   pathname: string;
 }) {
+  const visibleItems = items.filter((item) => !item.hidden);
+
   return (
     <nav className="space-y-2">
-      {ADMIN_NAV_ITEMS.map((item) => {
+      {visibleItems.map((item) => {
         const Icon = item.icon;
         const active = isActivePath(pathname, item.href);
         const className = `flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-black transition ${getNavClass(
@@ -168,6 +153,86 @@ export default function AdminShell({ children }: AdminShellProps) {
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
+
+  const adminRole = adminUser?.role || "support";
+
+  const navItems = useMemo<AdminNavItem[]>(() => {
+    const userCanViewUsers = canViewUsers(adminRole);
+    const userCanManageUsers = canManageUsers(adminRole);
+    const userCanViewReports = canViewReports(adminRole);
+    const userCanManageSettings = canManageSettings(adminRole);
+
+    return [
+      {
+        label: "Dashboard",
+        href: "/admin",
+        icon: LayoutDashboard,
+      },
+      {
+        label: "Orders",
+        href: "/admin/orders",
+        icon: ClipboardList,
+      },
+      {
+        label: "Users / Roles",
+        href: "/admin/users",
+        icon: UsersRound,
+        badge: userCanManageUsers ? "Manage" : "View",
+        hidden: !userCanViewUsers,
+      },
+      {
+        label: "Reports",
+        href: "/admin/reports",
+        icon: BarChart3,
+        badge: userCanViewReports ? "Soon" : "Locked",
+        disabled: true,
+        hidden: !userCanViewReports,
+      },
+      {
+        label: "Settings",
+        href: "/admin/settings",
+        icon: Settings,
+        badge: userCanManageSettings ? "Soon" : "Locked",
+        disabled: true,
+        hidden: !userCanManageSettings,
+      },
+    ];
+  }, [adminRole]);
+
+  async function loadAdminUser() {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+
+      if (!token) return;
+
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch("/api/admin/me", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        signal: controller.signal,
+      });
+
+      window.clearTimeout(timeout);
+
+      const json = await res.json().catch(() => null);
+
+      if (res.ok && json?.allowed && json?.user) {
+        setAdminUser(json.user);
+      }
+    } catch {
+      // Sidebar permissions are non-blocking. Page-level APIs still enforce security.
+    }
+  }
+
+  useEffect(() => {
+    loadAdminUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleLogout() {
     setSigningOut(true);
@@ -251,6 +316,7 @@ export default function AdminShell({ children }: AdminShellProps) {
             </div>
 
             <AdminNav
+              items={navItems}
               pathname={pathname}
               onNavigate={() => setMobileOpen(false)}
             />
@@ -311,9 +377,20 @@ export default function AdminShell({ children }: AdminShellProps) {
                 </div>
               </div>
             </div>
+
+            {adminUser ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[10px] font-black uppercase text-blue-700">
+                  {adminUser.role}
+                </span>
+                <span className="rounded-full border border-green-200 bg-green-50 px-3 py-1 text-[10px] font-black uppercase text-green-700">
+                  Active
+                </span>
+              </div>
+            ) : null}
           </div>
 
-          <AdminNav pathname={pathname} />
+          <AdminNav items={navItems} pathname={pathname} />
 
           <div className="mt-5 space-y-2 border-t border-neutral-200 pt-5">
             <Link
@@ -340,8 +417,8 @@ export default function AdminShell({ children }: AdminShellProps) {
               Secure Area
             </div>
             <p className="mt-2 text-xs font-bold leading-5 text-neutral-600">
-              Admin access is protected through database roles and active account
-              status checks.
+              Admin access is protected through database roles, active account
+              status and centralized permission checks.
             </p>
           </div>
         </aside>
