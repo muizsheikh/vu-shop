@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import {
+  canExportOrders,
+  canUpdateOrders,
   getOrderStatusLabel,
   normalizeOrderStatus,
   ORDER_STATUSES,
@@ -365,6 +367,13 @@ export default function AdminOrdersPage() {
   const [exportingFullCsv, setExportingFullCsv] = useState(false);
   const [errorText, setErrorText] = useState("");
 
+  const userCanUpdateOrders = adminUser
+    ? canUpdateOrders(adminUser.role)
+    : false;
+  const userCanExportOrders = adminUser
+    ? canExportOrders(adminUser.role)
+    : false;
+
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token || "";
@@ -484,6 +493,11 @@ export default function AdminOrdersPage() {
   }
 
   async function updateStatus(orderId: string, status: string) {
+    if (!userCanUpdateOrders) {
+      setErrorText("You do not have permission to update order status.");
+      return;
+    }
+
     setUpdatingId(orderId);
     setErrorText("");
 
@@ -662,6 +676,11 @@ export default function AdminOrdersPage() {
   }
 
   function exportDisplayedOrdersCsv() {
+    if (!userCanExportOrders) {
+      setErrorText("You do not have permission to export orders.");
+      return;
+    }
+
     const headers = [
       "Order No",
       "Date",
@@ -727,6 +746,11 @@ export default function AdminOrdersPage() {
   }
 
   async function exportFullOrdersCsv() {
+    if (!userCanExportOrders) {
+      setErrorText("You do not have permission to export orders.");
+      return;
+    }
+
     setExportingFullCsv(true);
     setErrorText("");
 
@@ -791,7 +815,9 @@ export default function AdminOrdersPage() {
 
   const selectedDateLabel = getDateFilterLabel(dateFilter);
   const pageStart =
-    pagination.total_count === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1;
+    pagination.total_count === 0
+      ? 0
+      : (pagination.page - 1) * pagination.limit + 1;
   const pageEnd = Math.min(
     pagination.page * pagination.limit,
     pagination.total_count
@@ -883,6 +909,26 @@ export default function AdminOrdersPage() {
           <span className="rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-black uppercase text-neutral-600">
             Showing: {pageStart}-{pageEnd} of {pagination.total_count}
           </span>
+
+          <span
+            className={`rounded-full border px-4 py-2 text-xs font-black uppercase ${
+              userCanUpdateOrders
+                ? "border-green-200 bg-green-50 text-green-700"
+                : "border-amber-200 bg-amber-50 text-amber-700"
+            }`}
+          >
+            Status Update: {userCanUpdateOrders ? "Allowed" : "View Only"}
+          </span>
+
+          <span
+            className={`rounded-full border px-4 py-2 text-xs font-black uppercase ${
+              userCanExportOrders
+                ? "border-green-200 bg-green-50 text-green-700"
+                : "border-neutral-200 bg-neutral-50 text-neutral-600"
+            }`}
+          >
+            Export: {userCanExportOrders ? "Allowed" : "Restricted"}
+          </span>
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4">
@@ -955,9 +1001,9 @@ export default function AdminOrdersPage() {
             event.preventDefault();
             submitSearch(search);
           }}
-          className="flex flex-col gap-3 md:flex-row"
+          className="flex flex-col gap-3 md:flex-row md:flex-wrap"
         >
-          <div className="relative flex-1">
+          <div className="relative min-w-[260px] flex-1">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
             <input
               value={search}
@@ -996,31 +1042,35 @@ export default function AdminOrdersPage() {
             Reset
           </button>
 
-          <button
-            type="button"
-            disabled={loadingOrders || displayedOrders.length === 0}
-            onClick={exportDisplayedOrdersCsv}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-green-200 bg-green-50 px-6 text-sm font-black text-green-700 transition hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Download className="h-4 w-4" />
-            Export Page CSV
-          </button>
+          {userCanExportOrders ? (
+            <>
+              <button
+                type="button"
+                disabled={loadingOrders || displayedOrders.length === 0}
+                onClick={exportDisplayedOrdersCsv}
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-green-200 bg-green-50 px-6 text-sm font-black text-green-700 transition hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Download className="h-4 w-4" />
+                Export Page CSV
+              </button>
 
-          <button
-            type="button"
-            disabled={
-              loadingOrders || exportingFullCsv || pagination.total_count === 0
-            }
-            onClick={exportFullOrdersCsv}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] px-6 text-sm font-black text-[#a30105] transition hover:bg-[#fff1f1] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {exportingFullCsv ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            {exportingFullCsv ? "Exporting..." : "Export Full CSV"}
-          </button>
+              <button
+                type="button"
+                disabled={
+                  loadingOrders || exportingFullCsv || pagination.total_count === 0
+                }
+                onClick={exportFullOrdersCsv}
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] px-6 text-sm font-black text-[#a30105] transition hover:bg-[#fff1f1] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {exportingFullCsv ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {exportingFullCsv ? "Exporting..." : "Export Full CSV"}
+              </button>
+            </>
+          ) : null}
         </form>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -1118,7 +1168,9 @@ export default function AdminOrdersPage() {
                   <th className="px-3 py-2">Total</th>
                   <th className="px-3 py-2">Payment</th>
                   <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Update</th>
+                  <th className="px-3 py-2">
+                    {userCanUpdateOrders ? "Update" : "Access"}
+                  </th>
                   <th className="px-3 py-2">Action</th>
                 </tr>
               </thead>
@@ -1188,27 +1240,35 @@ export default function AdminOrdersPage() {
                       </td>
 
                       <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
-                        <select
-                          value={normalizedStatus}
-                          disabled={isUpdating}
-                          onChange={(event) =>
-                            updateStatus(order.id, event.target.value)
-                          }
-                          className="h-10 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-black uppercase text-neutral-800 outline-none focus:border-[#a30105] disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {ORDER_STATUSES.map((status) => (
-                            <option key={status} value={status}>
-                              {getOrderStatusLabel(status)}
-                            </option>
-                          ))}
-                        </select>
+                        {userCanUpdateOrders ? (
+                          <>
+                            <select
+                              value={normalizedStatus}
+                              disabled={isUpdating}
+                              onChange={(event) =>
+                                updateStatus(order.id, event.target.value)
+                              }
+                              className="h-10 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-black uppercase text-neutral-800 outline-none focus:border-[#a30105] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {ORDER_STATUSES.map((status) => (
+                                <option key={status} value={status}>
+                                  {getOrderStatusLabel(status)}
+                                </option>
+                              ))}
+                            </select>
 
-                        {isUpdating ? (
-                          <div className="mt-2 flex items-center gap-1 text-xs font-bold text-neutral-500">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Saving...
-                          </div>
-                        ) : null}
+                            {isUpdating ? (
+                              <div className="mt-2 flex items-center gap-1 text-xs font-bold text-neutral-500">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Saving...
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="inline-flex rounded-full border border-neutral-200 bg-white px-3 py-2 text-xs font-black uppercase text-neutral-500">
+                            View Only
+                          </span>
+                        )}
                       </td>
 
                       <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">

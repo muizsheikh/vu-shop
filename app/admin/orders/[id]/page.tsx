@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import {
+  canManageDelivery,
+  canUpdateOrders,
   getOrderStatusLabel,
   normalizeOrderStatus,
   ORDER_STATUSES,
@@ -382,6 +384,13 @@ export default function AdminOrderDetailPage() {
     getDeliveryFormFromOrder(null)
   );
 
+  const userCanUpdateOrders = adminUser
+    ? canUpdateOrders(adminUser.role)
+    : false;
+  const userCanManageDelivery = adminUser
+    ? canManageDelivery(adminUser.role)
+    : false;
+
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token || "";
@@ -572,6 +581,11 @@ export default function AdminOrderDetailPage() {
   async function updateStatus(status: string) {
     if (!order) return;
 
+    if (!userCanUpdateOrders) {
+      setErrorText("You do not have permission to update order status.");
+      return;
+    }
+
     setUpdating(true);
     setErrorText("");
 
@@ -591,12 +605,6 @@ export default function AdminOrderDetailPage() {
         },
         body: JSON.stringify({
           status,
-          delivery_method: deliveryForm.delivery_method,
-          rider_name: deliveryForm.rider_name,
-          rider_phone: deliveryForm.rider_phone,
-          tracking_number: deliveryForm.tracking_number,
-          expected_delivery_time: deliveryForm.expected_delivery_time,
-          delivery_note: deliveryForm.delivery_note,
         }),
       });
 
@@ -625,6 +633,11 @@ export default function AdminOrderDetailPage() {
 
   async function saveDeliveryDetails() {
     if (!order) return;
+
+    if (!userCanManageDelivery) {
+      setDeliveryErrorText("You do not have permission to manage delivery details.");
+      return;
+    }
 
     setSavingDelivery(true);
     setDeliveryErrorText("");
@@ -928,6 +941,26 @@ export default function AdminOrderDetailPage() {
           <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold uppercase text-blue-700">
             Role: {adminUser?.role || "admin"}
           </div>
+
+          <div
+            className={`rounded-2xl border px-4 py-2 text-sm font-bold uppercase ${
+              userCanUpdateOrders
+                ? "border-green-200 bg-green-50 text-green-700"
+                : "border-amber-200 bg-amber-50 text-amber-700"
+            }`}
+          >
+            Status: {userCanUpdateOrders ? "Allowed" : "View Only"}
+          </div>
+
+          <div
+            className={`rounded-2xl border px-4 py-2 text-sm font-bold uppercase ${
+              userCanManageDelivery
+                ? "border-green-200 bg-green-50 text-green-700"
+                : "border-neutral-200 bg-neutral-50 text-neutral-600"
+            }`}
+          >
+            Delivery: {userCanManageDelivery ? "Allowed" : "View Only"}
+          </div>
         </div>
       </div>
 
@@ -956,22 +989,28 @@ export default function AdminOrderDetailPage() {
 
           <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
             <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
-              Update Order Status
+              {userCanUpdateOrders ? "Update Order Status" : "Order Status"}
             </label>
 
             <div className="mt-3 flex gap-2">
-              <select
-                value={normalizedStatus}
-                disabled={updating}
-                onChange={(event) => updateStatus(event.target.value)}
-                className="h-12 flex-1 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-black uppercase text-neutral-800 outline-none focus:border-[#a30105] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {ORDER_STATUSES.map((status) => (
-                  <option key={status} value={status}>
-                    {getOrderStatusLabel(status)}
-                  </option>
-                ))}
-              </select>
+              {userCanUpdateOrders ? (
+                <select
+                  value={normalizedStatus}
+                  disabled={updating}
+                  onChange={(event) => updateStatus(event.target.value)}
+                  className="h-12 flex-1 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-black uppercase text-neutral-800 outline-none focus:border-[#a30105] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {ORDER_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {getOrderStatusLabel(status)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="flex h-12 flex-1 items-center rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-black uppercase text-neutral-500">
+                  View Only
+                </div>
+              )}
 
               <div
                 className={`flex h-12 items-center rounded-2xl border px-4 text-xs font-black uppercase ${getStatusClasses(
@@ -1094,148 +1133,220 @@ export default function AdminOrderDetailPage() {
               </div>
             </div>
 
-            <span className="rounded-full border border-blue-200 bg-white px-4 py-2 text-xs font-black uppercase text-blue-700">
-              {getDeliveryMethodLabel(order.delivery_method)}
-            </span>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-blue-200 bg-white px-4 py-2 text-xs font-black uppercase text-blue-700">
+                {getDeliveryMethodLabel(order.delivery_method)}
+              </span>
+
+              <span
+                className={`rounded-full border px-4 py-2 text-xs font-black uppercase ${
+                  userCanManageDelivery
+                    ? "border-green-200 bg-green-50 text-green-700"
+                    : "border-neutral-200 bg-white text-neutral-600"
+                }`}
+              >
+                {userCanManageDelivery ? "Editable" : "View Only"}
+              </span>
+            </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
-                Delivery Method
-              </label>
-              <select
-                value={deliveryForm.delivery_method}
-                onChange={(event) =>
-                  updateDeliveryForm("delivery_method", event.target.value)
-                }
-                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition focus:border-blue-500"
-              >
-                <option value="">Not Assigned</option>
-                <option value="rider">Rider Delivery</option>
-                <option value="courier">Courier Delivery</option>
-                <option value="pickup">Store Pickup</option>
-              </select>
-            </div>
+          {userCanManageDelivery ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Delivery Method
+                  </label>
+                  <select
+                    value={deliveryForm.delivery_method}
+                    onChange={(event) =>
+                      updateDeliveryForm("delivery_method", event.target.value)
+                    }
+                    className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition focus:border-blue-500"
+                  >
+                    <option value="">Not Assigned</option>
+                    <option value="rider">Rider Delivery</option>
+                    <option value="courier">Courier Delivery</option>
+                    <option value="pickup">Store Pickup</option>
+                  </select>
+                </div>
 
-            <div>
-              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
-                Expected Delivery Time
-              </label>
-              <input
-                type="datetime-local"
-                value={deliveryForm.expected_delivery_time}
-                onChange={(event) =>
-                  updateDeliveryForm(
-                    "expected_delivery_time",
-                    event.target.value
-                  )
-                }
-                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition focus:border-blue-500"
-              />
-            </div>
+                <div>
+                  <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Expected Delivery Time
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={deliveryForm.expected_delivery_time}
+                    onChange={(event) =>
+                      updateDeliveryForm(
+                        "expected_delivery_time",
+                        event.target.value
+                      )
+                    }
+                    className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition focus:border-blue-500"
+                  />
+                </div>
 
-            <div>
-              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
-                Rider / Courier Name
-              </label>
-              <input
-                type="text"
-                value={deliveryForm.rider_name}
-                onChange={(event) =>
-                  updateDeliveryForm("rider_name", event.target.value)
-                }
-                placeholder="Example: Ali Rider / TCS / Leopard"
-                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
-              />
-            </div>
+                <div>
+                  <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Rider / Courier Name
+                  </label>
+                  <input
+                    type="text"
+                    value={deliveryForm.rider_name}
+                    onChange={(event) =>
+                      updateDeliveryForm("rider_name", event.target.value)
+                    }
+                    placeholder="Example: Ali Rider / TCS / Leopard"
+                    className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
+                  />
+                </div>
 
-            <div>
-              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
-                Rider / Courier Phone
-              </label>
-              <input
-                type="text"
-                value={deliveryForm.rider_phone}
-                onChange={(event) =>
-                  updateDeliveryForm("rider_phone", event.target.value)
-                }
-                placeholder="Example: 03001234567"
-                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
-              />
-            </div>
+                <div>
+                  <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Rider / Courier Phone
+                  </label>
+                  <input
+                    type="text"
+                    value={deliveryForm.rider_phone}
+                    onChange={(event) =>
+                      updateDeliveryForm("rider_phone", event.target.value)
+                    }
+                    placeholder="Example: 03001234567"
+                    className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
+                  />
+                </div>
 
-            <div className="md:col-span-2">
-              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
-                Tracking Number / Courier ID
-              </label>
-              <input
-                type="text"
-                value={deliveryForm.tracking_number}
-                onChange={(event) =>
-                  updateDeliveryForm("tracking_number", event.target.value)
-                }
-                placeholder="Example: TCS123456 / Rider token / manual reference"
-                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
-              />
-            </div>
+                <div className="md:col-span-2">
+                  <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Tracking Number / Courier ID
+                  </label>
+                  <input
+                    type="text"
+                    value={deliveryForm.tracking_number}
+                    onChange={(event) =>
+                      updateDeliveryForm("tracking_number", event.target.value)
+                    }
+                    placeholder="Example: TCS123456 / Rider token / manual reference"
+                    className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
+                  />
+                </div>
 
-            <div className="md:col-span-2">
-              <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
-                Delivery Note
-              </label>
-              <textarea
-                value={deliveryForm.delivery_note}
-                onChange={(event) =>
-                  updateDeliveryForm("delivery_note", event.target.value)
-                }
-                placeholder="Example: Customer requested evening delivery. Call before dispatch."
-                rows={4}
-                maxLength={1200}
-                className="mt-2 w-full resize-none rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
-              />
-              <div className="mt-2 text-xs font-bold text-neutral-500">
-                {deliveryForm.delivery_note.trim().length}/1200 characters
+                <div className="md:col-span-2">
+                  <label className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Delivery Note
+                  </label>
+                  <textarea
+                    value={deliveryForm.delivery_note}
+                    onChange={(event) =>
+                      updateDeliveryForm("delivery_note", event.target.value)
+                    }
+                    placeholder="Example: Customer requested evening delivery. Call before dispatch."
+                    rows={4}
+                    maxLength={1200}
+                    className="mt-2 w-full resize-none rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
+                  />
+                  <div className="mt-2 text-xs font-bold text-neutral-500">
+                    {deliveryForm.delivery_note.trim().length}/1200 characters
+                  </div>
+                </div>
+              </div>
+
+              {deliveryErrorText ? (
+                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+                  {deliveryErrorText}
+                </div>
+              ) : null}
+
+              {deliverySuccessText ? (
+                <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-bold text-green-700">
+                  {deliverySuccessText}
+                </div>
+              ) : null}
+
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm leading-6 text-neutral-500">
+                  These details can be shown on the customer order detail page and included in the WhatsApp out-for-delivery message.
+                </p>
+
+                <button
+                  type="button"
+                  disabled={savingDelivery}
+                  onClick={saveDeliveryDetails}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingDelivery ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4" />
+                      Save Delivery
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-blue-100 bg-white p-4">
+                <p className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                  Delivery Method
+                </p>
+                <p className="mt-2 text-sm font-black text-neutral-950">
+                  {getDeliveryMethodLabel(order.delivery_method)}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-blue-100 bg-white p-4">
+                <p className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                  Expected Delivery Time
+                </p>
+                <p className="mt-2 text-sm font-black text-neutral-950">
+                  {formatDate(order.expected_delivery_time)}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-blue-100 bg-white p-4">
+                <p className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                  Rider / Courier Name
+                </p>
+                <p className="mt-2 text-sm font-black text-neutral-950">
+                  {order.rider_name || "Not assigned"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-blue-100 bg-white p-4">
+                <p className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                  Rider / Courier Phone
+                </p>
+                <p className="mt-2 text-sm font-black text-neutral-950">
+                  {order.rider_phone || "Not assigned"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-blue-100 bg-white p-4 md:col-span-2">
+                <p className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                  Tracking Number / Courier ID
+                </p>
+                <p className="mt-2 text-sm font-black text-neutral-950">
+                  {order.tracking_number || "Not assigned"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-blue-100 bg-white p-4 md:col-span-2">
+                <p className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                  Delivery Note
+                </p>
+                <p className="mt-2 whitespace-pre-wrap text-sm font-bold leading-6 text-neutral-700">
+                  {order.delivery_note || "No delivery note available."}
+                </p>
               </div>
             </div>
-          </div>
-
-          {deliveryErrorText ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
-              {deliveryErrorText}
-            </div>
-          ) : null}
-
-          {deliverySuccessText ? (
-            <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-bold text-green-700">
-              {deliverySuccessText}
-            </div>
-          ) : null}
-
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm leading-6 text-neutral-500">
-              These details can be shown on the customer order detail page and included in the WhatsApp out-for-delivery message.
-            </p>
-
-            <button
-              type="button"
-              disabled={savingDelivery}
-              onClick={saveDeliveryDetails}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {savingDelivery ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="h-4 w-4" />
-                  Save Delivery
-                </>
-              )}
-            </button>
-          </div>
+          )}
         </div>
 
         <div className="mt-6 rounded-[26px] border border-green-200 bg-green-50/40 p-5">
