@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { normalizeOrderStatus, ORDER_STATUSES } from "@/lib/admin";
+import {
+  canManageDelivery,
+  canUpdateOrders,
+  canViewOrders,
+  normalizeOrderStatus,
+  ORDER_STATUSES,
+} from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getAdminUserFromRequest } from "@/lib/adminAuth";
 
@@ -8,9 +14,22 @@ const ORDER_SELECT =
 
 const DELIVERY_METHODS = ["", "rider", "courier", "pickup"];
 
+const DELIVERY_FIELD_KEYS = [
+  "delivery_method",
+  "rider_name",
+  "rider_phone",
+  "delivery_note",
+  "tracking_number",
+  "expected_delivery_time",
+];
+
 function cleanText(value: unknown) {
   const text = String(value || "").trim();
   return text.length ? text : null;
+}
+
+function hasDeliveryFieldUpdate(body: Record<string, any>) {
+  return DELIVERY_FIELD_KEYS.some((key) => Object.prototype.hasOwnProperty.call(body, key));
 }
 
 function cleanDeliveryMethod(value: unknown) {
@@ -76,12 +95,22 @@ export async function GET(
       );
     }
 
+    if (!canViewOrders(admin.user.role)) {
+      return NextResponse.json(
+        { error: "You do not have permission to view order history." },
+        { status: 403 }
+      );
+    }
+
     const { id } = await context.params;
     const history = await loadHistory(id);
 
     return NextResponse.json({
       history,
       admin: admin.user,
+      permissions: {
+        can_view_orders: canViewOrders(admin.user.role),
+      },
     });
   } catch (error: any) {
     return NextResponse.json(
@@ -145,6 +174,30 @@ export async function PATCH(
       );
     }
 
+    const statusChanged = oldStatus !== requestedStatus;
+    const deliveryFieldsProvided = hasDeliveryFieldUpdate(body);
+
+    if (statusChanged && !canUpdateOrders(admin.user.role)) {
+      return NextResponse.json(
+        { error: "You do not have permission to update order status." },
+        { status: 403 }
+      );
+    }
+
+    if (deliveryFieldsProvided && !canManageDelivery(admin.user.role)) {
+      return NextResponse.json(
+        { error: "You do not have permission to manage delivery details." },
+        { status: 403 }
+      );
+    }
+
+    if (!statusChanged && !deliveryFieldsProvided) {
+      return NextResponse.json(
+        { error: "No update fields were provided." },
+        { status: 400 }
+      );
+    }
+
     const deliveryMethod = cleanDeliveryMethod(body.delivery_method);
 
     if (!deliveryMethod.ok) {
@@ -165,15 +218,20 @@ export async function PATCH(
       );
     }
 
-    const updatePayload = {
-      status: requestedStatus,
-      delivery_method: deliveryMethod.value,
-      rider_name: cleanText(body.rider_name),
-      rider_phone: cleanText(body.rider_phone),
-      delivery_note: cleanText(body.delivery_note),
-      tracking_number: cleanText(body.tracking_number),
-      expected_delivery_time: expectedDeliveryTime,
-    };
+    const updatePayload: Record<string, any> = {};
+
+    if (statusChanged || body.status !== undefined) {
+      updatePayload.status = requestedStatus;
+    }
+
+    if (deliveryFieldsProvided) {
+      updatePayload.delivery_method = deliveryMethod.value;
+      updatePayload.rider_name = cleanText(body.rider_name);
+      updatePayload.rider_phone = cleanText(body.rider_phone);
+      updatePayload.delivery_note = cleanText(body.delivery_note);
+      updatePayload.tracking_number = cleanText(body.tracking_number);
+      updatePayload.expected_delivery_time = expectedDeliveryTime;
+    }
 
     const { data, error } = await supabaseAdmin
       .from("orders")
@@ -189,7 +247,7 @@ export async function PATCH(
       );
     }
 
-    if (oldStatus !== requestedStatus) {
+    if (statusChanged) {
       await supabaseAdmin.from("order_status_history").insert({
         order_id: id,
         old_status: oldStatus,
@@ -204,10 +262,15 @@ export async function PATCH(
       order: data,
       history,
       admin: admin.user,
+      permissions: {
+        can_view_orders: canViewOrders(admin.user.role),
+        can_update_orders: canUpdateOrders(admin.user.role),
+        can_manage_delivery: canManageDelivery(admin.user.role),
+      },
       message:
-        oldStatus === requestedStatus
-          ? "Order updated successfully."
-          : "Order status updated successfully.",
+        statusChanged
+          ? "Order status updated successfully."
+          : "Order delivery details updated successfully.",
     });
   } catch (error: any) {
     return NextResponse.json(

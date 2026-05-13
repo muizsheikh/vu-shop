@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminUserFromRequest } from "@/lib/adminAuth";
-import { normalizeRole } from "@/lib/admin";
+import { canManageUsers, canViewUsers, normalizeRole } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 type ProfileRow = {
@@ -18,7 +18,11 @@ function normalizeSearch(value: string | null | undefined) {
   return String(value || "").trim().toLowerCase();
 }
 
-function userMatchesSearch(user: any, profile: ProfileRow | undefined, search: string) {
+function userMatchesSearch(
+  user: any,
+  profile: ProfileRow | undefined,
+  search: string
+) {
   if (!search) return true;
 
   const haystack = [
@@ -46,6 +50,19 @@ export async function GET(req: NextRequest) {
           error: admin.message,
         },
         { status: admin.status }
+      );
+    }
+
+    const adminRole = admin.user.role;
+    const userCanViewUsers = canViewUsers(adminRole);
+    const userCanManageUsers = canManageUsers(adminRole);
+
+    if (!userCanViewUsers) {
+      return NextResponse.json(
+        {
+          error: "You do not have permission to view users.",
+        },
+        { status: 403 }
       );
     }
 
@@ -160,7 +177,8 @@ export async function GET(req: NextRequest) {
         role: roleFilter,
         active: activeFilter,
       },
-      can_manage_users: admin.user.role === "admin",
+      can_view_users: userCanViewUsers,
+      can_manage_users: userCanManageUsers,
     });
   } catch (error: any) {
     return NextResponse.json(

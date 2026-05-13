@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  canManageUsers,
+  canViewUsers,
+  normalizeRole,
+} from "@/lib/admin";
 import { getAdminUserFromRequest } from "@/lib/adminAuth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
@@ -10,11 +15,6 @@ type RouteContext = {
 
 function jsonResponse(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
-}
-
-function normalizeRole(role: unknown) {
-  const value = String(role || "customer").trim().toLowerCase();
-  return value || "customer";
 }
 
 function normalizeBoolean(value: unknown, fallback = true) {
@@ -87,19 +87,31 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const adminCheck = await getAdminUserFromRequest(request);
 
-    if (!adminCheck?.allowed) {
+    if (!adminCheck.ok) {
       return jsonResponse(
         {
           allowed: false,
-          error: adminCheck?.error || "Admin access required.",
-          admin: adminCheck?.user || null,
+          error: adminCheck.message || "Admin access required.",
+          admin: null,
         },
-        403
+        adminCheck.status || 403
       );
     }
 
     const adminUser = adminCheck.user;
-    const canManageUsers = adminUser?.role === "admin";
+    const userCanViewUsers = canViewUsers(adminUser.role);
+    const userCanManageUsers = canManageUsers(adminUser.role);
+
+    if (!userCanViewUsers) {
+      return jsonResponse(
+        {
+          allowed: false,
+          error: "You do not have permission to view user details.",
+          admin: adminUser,
+        },
+        403
+      );
+    }
 
     const { data: authResult, error: authError } =
       await supabaseAdmin.auth.admin.getUserById(userId);
@@ -209,7 +221,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return jsonResponse({
       allowed: true,
       admin: adminUser,
-      can_manage_users: canManageUsers,
+      can_view_users: userCanViewUsers,
+      can_manage_users: userCanManageUsers,
       user,
       orders: safeOrders,
       order_summary: summarizeOrders(safeOrders),
@@ -218,7 +231,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
   } catch (error: any) {
     return jsonResponse(
       {
-        error: error?.message || "Something went wrong while loading user detail.",
+        error:
+          error?.message || "Something went wrong while loading user detail.",
       },
       500
     );

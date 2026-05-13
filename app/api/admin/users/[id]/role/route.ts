@@ -1,12 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminUserFromRequest } from "@/lib/adminAuth";
-import { ADMIN_ROLES, normalizeRole } from "@/lib/admin";
+import {
+  ADMIN_ROLES,
+  canManageUsers,
+  normalizeRole,
+} from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const ALLOWED_PROFILE_ROLES = ["customer", ...ADMIN_ROLES];
 
 function isAllowedProfileRole(role: string) {
   return ALLOWED_PROFILE_ROLES.includes(role as any);
+}
+
+function buildUserResponse(targetUser: any, profile: any) {
+  return {
+    id: targetUser.user.id,
+    email: String(targetUser.user.email || "").trim().toLowerCase(),
+    created_at: targetUser.user.created_at || null,
+    last_sign_in_at: targetUser.user.last_sign_in_at || null,
+    email_confirmed_at: targetUser.user.email_confirmed_at || null,
+    full_name: profile?.full_name || null,
+    phone: profile?.phone || null,
+    city: profile?.city || null,
+    address_line1: profile?.address_line1 || null,
+    role: normalizeRole(profile?.role),
+    is_active: profile?.is_active !== false,
+    profile_updated_at: profile?.updated_at || null,
+    has_profile: Boolean(profile),
+  };
 }
 
 export async function PATCH(
@@ -25,10 +47,10 @@ export async function PATCH(
       );
     }
 
-    if (admin.user.role !== "admin") {
+    if (!canManageUsers(admin.user.role)) {
       return NextResponse.json(
         {
-          error: "Only admin users can manage roles and account status.",
+          error: "You do not have permission to manage user roles or account status.",
         },
         { status: 403 }
       );
@@ -98,7 +120,9 @@ export async function PATCH(
     const { data: currentProfile, error: currentProfileError } =
       await supabaseAdmin
         .from("profiles")
-        .select("id, full_name, phone, city, address_line1, role, is_active, updated_at")
+        .select(
+          "id, full_name, phone, city, address_line1, role, is_active, updated_at"
+        )
         .eq("id", targetUserId)
         .maybeSingle();
 
@@ -121,21 +145,11 @@ export async function PATCH(
     if (!roleChanged && !activeChanged) {
       return NextResponse.json({
         admin: admin.user,
-        user: {
-          id: targetUser.user.id,
-          email: String(targetUser.user.email || "").trim().toLowerCase(),
-          created_at: targetUser.user.created_at || null,
-          last_sign_in_at: targetUser.user.last_sign_in_at || null,
-          email_confirmed_at: targetUser.user.email_confirmed_at || null,
-          full_name: currentProfile?.full_name || null,
-          phone: currentProfile?.phone || null,
-          city: currentProfile?.city || null,
-          address_line1: currentProfile?.address_line1 || null,
+        user: buildUserResponse(targetUser, {
+          ...currentProfile,
           role: oldRole,
           is_active: oldIsActive,
-          profile_updated_at: currentProfile?.updated_at || null,
-          has_profile: Boolean(currentProfile),
-        },
+        }),
         audit_logged: false,
         message: "No changes were required.",
       });
@@ -159,7 +173,9 @@ export async function PATCH(
       .upsert(updatePayload, {
         onConflict: "id",
       })
-      .select("id, full_name, phone, city, address_line1, role, is_active, updated_at")
+      .select(
+        "id, full_name, phone, city, address_line1, role, is_active, updated_at"
+      )
       .single();
 
     if (updateError) {
@@ -185,21 +201,7 @@ export async function PATCH(
     return NextResponse.json({
       admin: admin.user,
       audit_logged: true,
-      user: {
-        id: targetUser.user.id,
-        email: String(targetUser.user.email || "").trim().toLowerCase(),
-        created_at: targetUser.user.created_at || null,
-        last_sign_in_at: targetUser.user.last_sign_in_at || null,
-        email_confirmed_at: targetUser.user.email_confirmed_at || null,
-        full_name: updatedProfile?.full_name || null,
-        phone: updatedProfile?.phone || null,
-        city: updatedProfile?.city || null,
-        address_line1: updatedProfile?.address_line1 || null,
-        role: normalizeRole(updatedProfile?.role),
-        is_active: updatedProfile?.is_active !== false,
-        profile_updated_at: updatedProfile?.updated_at || null,
-        has_profile: true,
-      },
+      user: buildUserResponse(targetUser, updatedProfile),
     });
   } catch (error: any) {
     return NextResponse.json(

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getAdminUserFromRequest } from "@/lib/adminAuth";
-import { normalizeOrderStatus, ORDER_STATUSES } from "@/lib/admin";
+import {
+  canViewOrders,
+  normalizeOrderStatus,
+  ORDER_STATUSES,
+} from "@/lib/admin";
 
 const ORDER_SELECT =
   "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, customer_note, items, created_at, delivery_method, rider_name, rider_phone, delivery_note, tracking_number, expected_delivery_time";
@@ -28,7 +32,12 @@ const DATE_FILTERS = [
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 type DateFilter = (typeof DATE_FILTERS)[number];
 
-function clampNumber(value: string | null, fallback: number, min: number, max: number) {
+function clampNumber(
+  value: string | null,
+  fallback: number,
+  min: number,
+  max: number
+) {
   const parsed = Number(value || fallback);
 
   if (!Number.isFinite(parsed)) return fallback;
@@ -262,6 +271,13 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    if (!canViewOrders(admin.user.role)) {
+      return NextResponse.json(
+        { error: "You do not have permission to view orders." },
+        { status: 403 }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
 
     const id = searchParams.get("id");
@@ -288,6 +304,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         order: data,
         admin: admin.user,
+        permissions: {
+          can_view_orders: canViewOrders(admin.user.role),
+        },
       });
     }
 
@@ -296,9 +315,7 @@ export async function GET(req: NextRequest) {
 
     let query = getBaseOrdersQuery(search, date);
     query = applyStatusFilter(query, status);
-    query = query
-      .order("created_at", { ascending: false })
-      .range(from, to);
+    query = query.order("created_at", { ascending: false }).range(from, to);
 
     const { data, error, count } = await query.select(ORDER_SELECT, {
       count: "exact",
@@ -318,6 +335,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       orders: Array.isArray(data) ? data : [],
       admin: admin.user,
+      permissions: {
+        can_view_orders: canViewOrders(admin.user.role),
+      },
       pagination: {
         page,
         limit,

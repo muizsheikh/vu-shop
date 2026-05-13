@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getAdminUserFromRequest } from "@/lib/adminAuth";
-import { normalizeOrderStatus } from "@/lib/admin";
+import { canExportOrders, normalizeOrderStatus } from "@/lib/admin";
 
 const ORDER_SELECT =
   "id, sales_order, payment_method, status, total_amount, currency, customer_name, customer_email, customer_phone, city, address_line1, items, created_at, delivery_method, rider_name, rider_phone, delivery_note, tracking_number, expected_delivery_time";
@@ -245,7 +245,11 @@ function getSafeFilePart(value: string) {
     .replace(/[^a-z0-9_-]/g, "");
 }
 
-function getExportFileName(date: DateFilter, status: StatusFilter, search: string) {
+function getExportFileName(
+  date: DateFilter,
+  status: StatusFilter,
+  search: string
+) {
   const today = new Date().toISOString().slice(0, 10);
   const datePart = getSafeFilePart(date);
   const statusPart = getSafeFilePart(status);
@@ -332,6 +336,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(
         { error: admin.message },
         { status: admin.status }
+      );
+    }
+
+    if (!canExportOrders(admin.user.role)) {
+      return NextResponse.json(
+        { error: "You do not have permission to export orders." },
+        { status: 403 }
       );
     }
 
