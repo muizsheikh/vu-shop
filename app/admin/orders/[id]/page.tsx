@@ -807,23 +807,19 @@ export default function AdminOrderDetailPage() {
     async function initAdmin() {
       setAuthLoading(true);
 
-      const { data } = await supabase.auth.getUser();
-      const user = data.user;
+      const { data } = await supabase.auth.getSession();
+const session = data.session;
 
-      if (!user) {
-        router.replace(`/account/login?next=/admin/orders/${orderId}`);
-        return;
-      }
+if (!session?.access_token) {
+  router.replace(`/account/login?next=/admin/orders/${orderId}`);
+  return;
+}
 
-      setAdminEmail(String(user.email || "").trim().toLowerCase());
+setAdminEmail(String(session.user?.email || "").trim().toLowerCase());
+setAllowed(true);
+setAuthLoading(false);
 
-      const token = await checkAdminAccess();
-
-      setAuthLoading(false);
-
-      if (token) {
-        await loadOrder(token);
-      }
+await loadOrder(session.access_token);
     }
 
     if (orderId) initAdmin();
