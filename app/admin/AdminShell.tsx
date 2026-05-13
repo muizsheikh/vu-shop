@@ -13,6 +13,7 @@ import {
   Settings,
   ShieldCheck,
   Store,
+  UserRound,
   UsersRound,
   X,
 } from "lucide-react";
@@ -21,6 +22,7 @@ import { supabase } from "@/lib/supabaseClient";
 import {
   canManageSettings,
   canManageUsers,
+  canViewCustomers,
   canViewReports,
   canViewUsers,
 } from "@/lib/admin";
@@ -160,6 +162,7 @@ export default function AdminShell({ children }: AdminShellProps) {
   const navItems = useMemo<AdminNavItem[]>(() => {
     const userCanViewUsers = canViewUsers(adminRole);
     const userCanManageUsers = canManageUsers(adminRole);
+    const userCanViewCustomers = canViewCustomers(adminRole);
     const userCanViewReports = canViewReports(adminRole);
     const userCanManageSettings = canManageSettings(adminRole);
 
@@ -173,6 +176,13 @@ export default function AdminShell({ children }: AdminShellProps) {
         label: "Orders",
         href: "/admin/orders",
         icon: ClipboardList,
+      },
+      {
+        label: "Customers",
+        href: "/admin/customers",
+        icon: UserRound,
+        badge: "CRM",
+        hidden: !userCanViewCustomers,
       },
       {
         label: "Users / Roles",
@@ -373,7 +383,7 @@ export default function AdminShell({ children }: AdminShellProps) {
                   Operations
                 </div>
                 <div className="text-xs font-bold text-neutral-500">
-                  Orders, users & reports
+                  Orders, customers & reports
                 </div>
               </div>
             </div>
