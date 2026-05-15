@@ -65,19 +65,51 @@ function cleanPhotoUrl(value: unknown) {
 }
 
 function getTodayDate() {
-  return new Date().toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Karachi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 function getClientIp(req: NextRequest) {
-  return (
+  const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
-    ""
-  );
+    "";
+
+  return ip.slice(0, 120);
 }
 
 function getDeviceInfo(req: NextRequest) {
-  return req.headers.get("user-agent") || "";
+  return String(req.headers.get("user-agent") || "").slice(0, 500);
+}
+
+function normalizeAction(value: unknown): "auto" | "check_in" | "check_out" | null {
+  const action = String(value || "auto").trim().toLowerCase();
+
+  if (action === "auto" || action === "check_in" || action === "check_out") {
+    return action as "auto" | "check_in" | "check_out";
+  }
+
+  return null;
+}
+
+function normalizeForCompare(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function buildAdminNote(parts: Array<string | null | undefined>) {
+  const uniqueParts = Array.from(
+    new Set(
+      parts
+        .map((part) => String(part || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  return uniqueParts.length ? uniqueParts.join("\n") : null;
 }
 
 function calculateDistanceMeters(
@@ -320,7 +352,16 @@ export async function POST(req: NextRequest) {
 
     const latitude = cleanNumber(body.latitude);
     const longitude = cleanNumber(body.longitude);
-    const requestedAction = body.action || "auto";
+    const requestedAction = normalizeAction(body.action);
+
+    if (!requestedAction) {
+      return jsonResponse(
+        {
+          error: "Invalid attendance action.",
+        },
+        400
+      );
+    }
 
     if (latitude === null || longitude === null) {
       return jsonResponse(
@@ -406,10 +447,23 @@ export async function POST(req: NextRequest) {
       action = "check_in";
     } else if (requestedAction === "check_out") {
       action = "check_out";
+    } else if (!existingLog?.check_in_at) {
+      action = "check_in";
+    } else if (!existingLog?.check_out_at) {
+      action = "check_out";
     } else {
-      action = !existingLog?.check_in_at ? "check_in" : "check_out";
+      return jsonResponse(
+        {
+          error: "Your attendance is already completed for today.",
+          attendance: existingLog,
+          employee,
+        },
+        400
+      );
     }
 
+    const clientIp = getClientIp(req);
+    const deviceInfo = getDeviceInfo(req);
     const photoUrl = getPhotoUrlForAction(body, action);
 
     if (!photoUrl) {
@@ -457,6 +511,17 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "check_in") {
+      const adminNote = buildAdminNote([
+        withinRadius === false
+          ? `SECURITY WARNING: Check-in outside allowed radius. Distance: ${
+              distanceMeters ?? "not available"
+            }m, allowed radius: ${allowedRadius ?? "not available"}m.`
+          : null,
+        !detectedBranchName
+          ? "SECURITY NOTE: No active branch location detected. Employee fallback location was used if available."
+          : null,
+      ]);
+
       const payload = {
         employee_id: employee.id,
         user_id: userId,
@@ -473,9 +538,10 @@ export async function POST(req: NextRequest) {
         detected_branch_name: detectedBranchName,
         branch_distance_meters: distanceMeters,
         branch_within_radius: withinRadius,
-        device_info: getDeviceInfo(req),
-        ip_address: getClientIp(req),
+        device_info: deviceInfo,
+        ip_address: clientIp,
         erp_sync_status: "pending",
+        admin_note: adminNote,
         updated_at: now,
       };
 
@@ -486,6 +552,18 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (insertError) {
+        const message = String(insertError.message || "");
+
+        if (message.toLowerCase().includes("duplicate")) {
+          return jsonResponse(
+            {
+              error: "You have already checked in today.",
+              employee,
+            },
+            400
+          );
+        }
+
         throw new Error(insertError.message || "Check-in failed.");
       }
 
@@ -519,6 +597,31 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    const checkoutAdminNote = buildAdminNote([
+      existingLog.admin_note,
+      withinRadius === false
+        ? `SECURITY WARNING: Check-out outside allowed radius. Distance: ${
+            distanceMeters ?? "not available"
+          }m, allowed radius: ${allowedRadius ?? "not available"}m.`
+        : null,
+      existingLog.ip_address &&
+      clientIp &&
+      normalizeForCompare(existingLog.ip_address) !== normalizeForCompare(clientIp)
+        ? `SECURITY NOTE: Check-out IP differs from check-in IP. Check-in IP: ${existingLog.ip_address}. Check-out IP: ${clientIp}.`
+        : null,
+      existingLog.device_info &&
+      deviceInfo &&
+      normalizeForCompare(existingLog.device_info) !== normalizeForCompare(deviceInfo)
+        ? "SECURITY NOTE: Check-out device/browser differs from check-in device/browser."
+        : null,
+      existingLog.detected_branch_name &&
+      detectedBranchName &&
+      normalizeForCompare(existingLog.detected_branch_name) !==
+        normalizeForCompare(detectedBranchName)
+        ? `SECURITY NOTE: Check-out branch differs from check-in branch. Check-in branch: ${existingLog.detected_branch_name}. Check-out branch: ${detectedBranchName}.`
+        : null,
+    ]);
+
     const { data: attendance, error: updateError } = await supabaseAdmin
       .from("employee_attendance_logs")
       .update({
@@ -533,6 +636,7 @@ export async function POST(req: NextRequest) {
         branch_distance_meters: distanceMeters,
         branch_within_radius: withinRadius,
         branch_name: logBranchName,
+        admin_note: checkoutAdminNote,
         updated_at: now,
       })
       .eq("id", existingLog.id)
