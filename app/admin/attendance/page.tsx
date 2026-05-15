@@ -11,6 +11,7 @@ import {
   Clock3,
   ExternalLink,
   Loader2,
+  Link2,
   MapPin,
   Navigation,
   Plus,
@@ -21,6 +22,7 @@ import {
   ShieldCheck,
   UserRound,
   UsersRound,
+  Unlink,
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
@@ -48,6 +50,19 @@ type EmployeeRow = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type AttendanceUser = {
+  id: string;
+  email: string;
+  full_name: string | null;
+  phone: string | null;
+  city: string | null;
+  role: string;
+  is_active: boolean;
+  created_at: string | null;
+  last_sign_in_at: string | null;
+  email_confirmed_at: string | null;
 };
 
 type BranchRow = {
@@ -307,6 +322,11 @@ export default function AdminAttendancePage() {
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [savingEmployee, setSavingEmployee] = useState(false);
 
+  const [attendanceUsers, setAttendanceUsers] = useState<AttendanceUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [linkingUser, setLinkingUser] = useState<string | null>(null);
+  const [selectedUserByEmployee, setSelectedUserByEmployee] = useState<Record<string, string>>({});
+
   const [branches, setBranches] = useState<BranchRow[]>([]);
   const [branchSummary, setBranchSummary] = useState<BranchSummary>(DEFAULT_BRANCH_SUMMARY);
   const [loadingBranches, setLoadingBranches] = useState(false);
@@ -338,6 +358,109 @@ export default function AdminAttendancePage() {
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token || "";
+  }
+
+  function getUserLabel(user: AttendanceUser) {
+    const name = String(user.full_name || "").trim();
+    const email = String(user.email || "").trim();
+
+    if (name && email) return `${name} — ${email}`;
+    if (email) return email;
+    if (name) return name;
+
+    return user.id;
+  }
+
+  function getLinkedUser(employee: EmployeeRow) {
+    if (!employee.user_id) return null;
+
+    return attendanceUsers.find((user) => user.id === employee.user_id) || null;
+  }
+
+  async function loadAttendanceUsers(options?: { tokenFromCheck?: string }) {
+    setLoadingUsers(true);
+
+    try {
+      const token = options?.tokenFromCheck || (await getAccessToken());
+
+      if (!token) {
+        router.replace("/account/login?next=/admin/attendance");
+        return;
+      }
+
+      const res = await fetch("/api/admin/attendance/users", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to load user accounts.");
+      }
+
+      setAttendanceUsers(Array.isArray(json?.users) ? json.users : []);
+
+      if (json?.admin) {
+        setAdminUser(json.admin);
+        setAdminEmail(json.admin.email || "");
+      }
+    } catch (error: any) {
+      setErrorText(error?.message || "Failed to load user accounts.");
+      setAttendanceUsers([]);
+    } finally {
+      setLoadingUsers(false);
+    }
+  }
+
+  async function linkEmployeeUser(employeeId: string, userId: string | null) {
+    const actionKey = userId ? `link:${employeeId}` : `unlink:${employeeId}`;
+    setLinkingUser(actionKey);
+    setErrorText("");
+    setSuccessText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace("/account/login?next=/admin/attendance");
+        return;
+      }
+
+      const res = await fetch(`/api/admin/attendance/employees/${employeeId}/user`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          user_id: userId,
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to update employee user link.");
+      }
+
+      setSuccessText(json?.message || "Employee user link updated successfully.");
+
+      if (!userId) {
+        setSelectedUserByEmployee((current) => ({
+          ...current,
+          [employeeId]: "",
+        }));
+      }
+
+      await Promise.all([
+        loadEmployees({ tokenFromCheck: token }),
+        loadLogs({ tokenFromCheck: token }),
+      ]);
+    } catch (error: any) {
+      setErrorText(error?.message || "Failed to update employee user link.");
+    } finally {
+      setLinkingUser(null);
+    }
   }
 
   async function loadEmployees(options?: {
@@ -772,6 +895,7 @@ export default function AdminAttendancePage() {
 
       await Promise.all([
         loadEmployees({ tokenFromCheck: session.access_token }),
+        loadAttendanceUsers({ tokenFromCheck: session.access_token }),
         loadBranches({ tokenFromCheck: session.access_token }),
         loadLogs({ tokenFromCheck: session.access_token }),
       ]);
@@ -1165,6 +1289,21 @@ export default function AdminAttendancePage() {
           <button type="button" disabled={loadingEmployees} onClick={resetFilters} className="h-12 rounded-2xl border border-neutral-200 bg-white px-6 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:opacity-60">Reset</button>
         </form>
 
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+          <div className="text-sm font-bold text-blue-700">
+            User accounts loaded for linking: {attendanceUsers.length}
+          </div>
+          <button
+            type="button"
+            onClick={() => loadAttendanceUsers()}
+            disabled={loadingUsers}
+            className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2 text-xs font-black uppercase text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loadingUsers ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Refresh Users
+          </button>
+        </div>
+
         {successText ? <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-bold text-green-700">{successText}</div> : null}
         {errorText ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{errorText}</div> : null}
       </div>
@@ -1176,10 +1315,17 @@ export default function AdminAttendancePage() {
           <div className="rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-10 text-center"><h2 className="text-xl font-black text-neutral-950">No Employees Found</h2><p className="mt-2 text-sm text-neutral-500">Add employees to start attendance tracking.</p></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] border-separate border-spacing-y-3">
-              <thead><tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500"><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Home Branch</th><th className="px-3 py-2">ERP Link</th><th className="px-3 py-2">Fallback Geo</th><th className="px-3 py-2">Radius</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Updated</th><th className="px-3 py-2">Action</th></tr></thead>
+            <table className="w-full min-w-[1450px] border-separate border-spacing-y-3">
+              <thead><tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500"><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Home Branch</th><th className="px-3 py-2">ERP Link</th><th className="px-3 py-2">Fallback Geo</th><th className="px-3 py-2">Radius</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Linked User</th><th className="px-3 py-2">Updated</th><th className="px-3 py-2">Action</th></tr></thead>
               <tbody>
-                {employees.map((employee) => (
+                {employees.map((employee) => {
+                  const linkedUser = getLinkedUser(employee);
+                  const selectedUserId =
+                    selectedUserByEmployee[employee.id] ??
+                    employee.user_id ??
+                    "";
+
+                  return (
                   <tr key={employee.id}>
                     <td className="rounded-l-2xl border-y border-l border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="flex items-start gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#a30105] shadow-sm"><UserRound className="h-5 w-5" /></div><div><div className="font-black text-neutral-950">{employee.employee_name}</div><div className="mt-1 text-xs font-bold text-neutral-500">{employee.employee_phone || employee.employee_email || "No contact"}</div><div className="mt-1 text-xs font-bold text-neutral-500">{employee.designation || "No designation"}</div></div></div></td>
                     <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="font-black text-neutral-950">{employee.branch_name}</div></td>
@@ -1187,25 +1333,84 @@ export default function AdminAttendancePage() {
                     <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="flex items-center gap-2 text-sm font-bold text-neutral-700"><MapPin className="h-4 w-4 text-[#a30105]" />{locationText(employee)}</div></td>
                     <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="font-bold text-neutral-800">{employee.allowed_radius_meters || 150}m</div></td>
                     <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">{employee.is_active ? <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-black uppercase text-green-700"><CheckCircle2 className="h-3.5 w-3.5" />Active</span> : <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-black uppercase text-red-700"><XCircle className="h-3.5 w-3.5" />Inactive</span>}</td>
+                    <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                      <div className="min-w-[280px] space-y-2">
+                        {employee.user_id ? (
+                          <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-black text-green-700">
+                            Linked: {linkedUser ? getUserLabel(linkedUser) : employee.user_id}
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">
+                            Not linked with login account
+                          </div>
+                        )}
+
+                        <select
+                          value={selectedUserId}
+                          onChange={(event) =>
+                            setSelectedUserByEmployee((current) => ({
+                              ...current,
+                              [employee.id]: event.target.value,
+                            }))
+                          }
+                          disabled={loadingUsers || linkingUser !== null}
+                          className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-800 outline-none focus:border-[#a30105] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <option value="">
+                            {loadingUsers ? "Loading users..." : "Select user account"}
+                          </option>
+                          {attendanceUsers.map((user) => (
+                            <option key={user.id} value={user.id}>
+                              {getUserLabel(user)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </td>
                     <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="text-sm font-bold text-neutral-700">{formatDate(employee.updated_at)}</div></td>
                     <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          clearAttendanceLogs("employee", {
-                            employeeId: employee.id,
-                            employeeName: employee.employee_name,
-                          })
-                        }
-                        disabled={clearingLogs === `employee:${employee.id}`}
-                        className="inline-flex items-center gap-1 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black uppercase text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        {clearingLogs === `employee:${employee.id}` ? "Clearing..." : "Clear Logs"}
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => linkEmployeeUser(employee.id, selectedUserId || null)}
+                          disabled={!selectedUserId || linkingUser !== null}
+                          className="inline-flex items-center gap-1 rounded-xl border border-[#a30105]/20 bg-white px-3 py-2 text-xs font-black uppercase text-[#a30105] transition hover:bg-[#fff7f7] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Link2 className="h-3.5 w-3.5" />
+                          {linkingUser === `link:${employee.id}` ? "Linking..." : "Link User"}
+                        </button>
+
+                        {employee.user_id ? (
+                          <button
+                            type="button"
+                            onClick={() => linkEmployeeUser(employee.id, null)}
+                            disabled={linkingUser !== null}
+                            className="inline-flex items-center gap-1 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-black uppercase text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Unlink className="h-3.5 w-3.5" />
+                            {linkingUser === `unlink:${employee.id}` ? "Unlinking..." : "Unlink"}
+                          </button>
+                        ) : null}
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            clearAttendanceLogs("employee", {
+                              employeeId: employee.id,
+                              employeeName: employee.employee_name,
+                            })
+                          }
+                          disabled={clearingLogs === `employee:${employee.id}`}
+                          className="inline-flex items-center gap-1 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black uppercase text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {clearingLogs === `employee:${employee.id}` ? "Clearing..." : "Clear Logs"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
