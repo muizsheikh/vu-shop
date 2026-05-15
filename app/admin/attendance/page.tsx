@@ -24,6 +24,7 @@ import {
   UserRound,
   UsersRound,
   Unlink,
+  X,
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
@@ -174,6 +175,16 @@ type BranchForm = {
 };
 
 type DateFilter = "today" | "yesterday" | "last_7_days" | "last_30_days" | "all_time";
+
+type PhotoPreview = {
+  url: string;
+  title: string;
+  employeeName: string;
+  branchName: string;
+  attendanceDate: string;
+  timeText: string;
+  photoType: "Check-in" | "Check-out";
+};
 
 const DEFAULT_SUMMARY: SummaryState = {
   total: 0,
@@ -372,6 +383,7 @@ export default function AdminAttendancePage() {
   const [successText, setSuccessText] = useState("");
   const [logsErrorText, setLogsErrorText] = useState("");
   const [clearingLogs, setClearingLogs] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<PhotoPreview | null>(null);
 
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
@@ -393,6 +405,29 @@ export default function AdminAttendancePage() {
     if (!employee.user_id) return null;
 
     return attendanceUsers.find((user) => user.id === employee.user_id) || null;
+  }
+
+  function openPhotoPreview(options: {
+    url: string;
+    photoType: "Check-in" | "Check-out";
+    employeeName: string;
+    branchName: string;
+    attendanceDate: string;
+    timeText: string;
+  }) {
+    setPhotoPreview({
+      url: options.url,
+      title: `${options.photoType} Photo`,
+      employeeName: options.employeeName || "Employee",
+      branchName: options.branchName || "No branch",
+      attendanceDate: options.attendanceDate || "Not available",
+      timeText: options.timeText || "Not available",
+      photoType: options.photoType,
+    });
+  }
+
+  function closePhotoPreview() {
+    setPhotoPreview(null);
   }
 
   async function loadAttendanceUsers(options?: { tokenFromCheck?: string }) {
@@ -1791,14 +1826,22 @@ export default function AdminAttendancePage() {
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
                     <div className="flex min-w-[150px] flex-col gap-2">
                       {log.check_in_photo_url ? (
-                        <a
-                          href={log.check_in_photo_url}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openPhotoPreview({
+                              url: String(log.check_in_photo_url || ""),
+                              photoType: "Check-in",
+                              employeeName: employee?.employee_name || "Employee",
+                              branchName: detectedBranch,
+                              attendanceDate: formatOnlyDate(log.attendance_date),
+                              timeText: formatDate(log.check_in_at),
+                            })
+                          }
                           className="inline-flex items-center justify-center gap-1 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-black uppercase text-green-700 transition hover:bg-green-100"
                         >
                           Check-in Photo <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
+                        </button>
                       ) : (
                         <span className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-black uppercase text-neutral-500">
                           No check-in photo
@@ -1806,14 +1849,22 @@ export default function AdminAttendancePage() {
                       )}
 
                       {log.check_out_photo_url ? (
-                        <a
-                          href={log.check_out_photo_url}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openPhotoPreview({
+                              url: String(log.check_out_photo_url || ""),
+                              photoType: "Check-out",
+                              employeeName: employee?.employee_name || "Employee",
+                              branchName: detectedBranch,
+                              attendanceDate: formatOnlyDate(log.attendance_date),
+                              timeText: formatDate(log.check_out_at),
+                            })
+                          }
                           className="inline-flex items-center justify-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-black uppercase text-blue-700 transition hover:bg-blue-100"
                         >
                           Check-out Photo <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
+                        </button>
                       ) : (
                         <span className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-black uppercase text-neutral-500">
                           No check-out photo
@@ -1839,6 +1890,60 @@ export default function AdminAttendancePage() {
           )}
         </div>
       </div>
+
+      {photoPreview ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/65 px-4 py-6 backdrop-blur-sm">
+          <div className="relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[30px] border border-neutral-200 bg-white shadow-[0_30px_100px_rgba(0,0,0,0.35)]">
+            <div className="flex flex-col gap-3 border-b border-neutral-200 p-5 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-[#a30105]">
+                  Attendance Verification
+                </p>
+                <h3 className="mt-2 text-2xl font-black text-neutral-950">{photoPreview.title}</h3>
+                <div className="mt-3 grid gap-2 text-sm font-bold text-neutral-600 sm:grid-cols-2">
+                  <div>Employee: <span className="text-neutral-950">{photoPreview.employeeName}</span></div>
+                  <div>Branch: <span className="text-neutral-950">{photoPreview.branchName}</span></div>
+                  <div>Date: <span className="text-neutral-950">{photoPreview.attendanceDate}</span></div>
+                  <div>Time: <span className="text-neutral-950">{photoPreview.timeText}</span></div>
+                </div>
+              </div>
+
+              <div className="flex shrink-0 gap-2">
+                <a
+                  href={photoPreview.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-xs font-black uppercase text-neutral-800 transition hover:bg-neutral-50"
+                >
+                  Open Tab <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={closePhotoPreview}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 text-neutral-900 transition hover:bg-neutral-100"
+                  aria-label="Close photo preview"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto bg-neutral-950 p-4">
+              <div className="flex min-h-[55vh] items-center justify-center rounded-[24px] bg-black">
+                <img
+                  src={photoPreview.url}
+                  alt={`${photoPreview.photoType} attendance photo for ${photoPreview.employeeName}`}
+                  className="max-h-[72vh] w-auto max-w-full rounded-2xl object-contain shadow-2xl"
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-neutral-200 bg-neutral-50 px-5 py-4 text-xs font-bold text-neutral-500">
+              Photo URL is stored in Supabase attendance-photos bucket. Use this preview for quick admin verification.
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
