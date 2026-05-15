@@ -18,6 +18,16 @@ type CheckPayload = {
   action?: "auto" | "check_in" | "check_out";
 };
 
+type BranchLocation = {
+  id: string;
+  branch_name: string;
+  branch_code: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  allowed_radius_meters: number | null;
+  is_active: boolean;
+};
+
 function jsonResponse(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
 }
@@ -99,6 +109,93 @@ async function getUserFromRequest(req: NextRequest) {
     status: 200,
     message: "OK",
     user: data.user,
+  };
+}
+
+async function detectNearestBranch(latitude: number, longitude: number) {
+  const { data, error } = await supabaseAdmin
+    .from("admin_branch_locations")
+    .select(
+      "id, branch_name, branch_code, latitude, longitude, allowed_radius_meters, is_active"
+    )
+    .eq("is_active", true)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null);
+
+  if (error) {
+    throw new Error(error.message || "Failed to load branch locations.");
+  }
+
+  const branches = Array.isArray(data) ? (data as BranchLocation[]) : [];
+
+  if (branches.length === 0) {
+    return null;
+  }
+
+  const rankedBranches = branches
+    .map((branch) => {
+      const branchLatitude = cleanNumber(branch.latitude);
+      const branchLongitude = cleanNumber(branch.longitude);
+      const radius = Number(branch.allowed_radius_meters || 150);
+
+      if (branchLatitude === null || branchLongitude === null) {
+        return null;
+      }
+
+      const distance = calculateDistanceMeters(
+        branchLatitude,
+        branchLongitude,
+        latitude,
+        longitude
+      );
+
+      return {
+        branch,
+        distance_meters: distance,
+        allowed_radius_meters: radius,
+        within_radius: distance <= radius,
+      };
+    })
+    .filter(Boolean) as {
+    branch: BranchLocation;
+    distance_meters: number;
+    allowed_radius_meters: number;
+    within_radius: boolean;
+  }[];
+
+  if (rankedBranches.length === 0) {
+    return null;
+  }
+
+  rankedBranches.sort((a, b) => a.distance_meters - b.distance_meters);
+
+  return rankedBranches[0];
+}
+
+function getEmployeeFallbackLocation(employee: any, latitude: number, longitude: number) {
+  const allowedLatitude = cleanNumber(employee.allowed_latitude);
+  const allowedLongitude = cleanNumber(employee.allowed_longitude);
+  const allowedRadius = Number(employee.allowed_radius_meters || 150);
+
+  if (allowedLatitude === null || allowedLongitude === null) {
+    return {
+      distance_meters: null as number | null,
+      allowed_radius_meters: allowedRadius,
+      within_radius: null as boolean | null,
+    };
+  }
+
+  const distance = calculateDistanceMeters(
+    allowedLatitude,
+    allowedLongitude,
+    latitude,
+    longitude
+  );
+
+  return {
+    distance_meters: distance,
+    allowed_radius_meters: allowedRadius,
+    within_radius: distance <= allowedRadius,
   };
 }
 
@@ -232,23 +329,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const allowedLatitude = cleanNumber(employee.allowed_latitude);
-    const allowedLongitude = cleanNumber(employee.allowed_longitude);
-    const allowedRadius = Number(employee.allowed_radius_meters || 150);
+    const nearestBranch = await detectNearestBranch(latitude, longitude);
+    const fallbackLocation = getEmployeeFallbackLocation(
+      employee,
+      latitude,
+      longitude
+    );
 
-    let distanceMeters: number | null = null;
-    let withinRadius: boolean | null = null;
+    const detectedBranch = nearestBranch?.branch || null;
+    const distanceMeters =
+      nearestBranch?.distance_meters ?? fallbackLocation.distance_meters;
+    const allowedRadius =
+      nearestBranch?.allowed_radius_meters ??
+      fallbackLocation.allowed_radius_meters;
+    const withinRadius =
+      nearestBranch?.within_radius ?? fallbackLocation.within_radius;
 
-    if (allowedLatitude !== null && allowedLongitude !== null) {
-      distanceMeters = calculateDistanceMeters(
-        allowedLatitude,
-        allowedLongitude,
-        latitude,
-        longitude
-      );
-
-      withinRadius = distanceMeters <= allowedRadius;
-    }
+    const detectedBranchId = detectedBranch?.id || null;
+    const detectedBranchName = detectedBranch?.branch_name || null;
+    const logBranchName = detectedBranchName || employee.branch_name;
 
     const { data: existingLog, error: existingError } = await supabaseAdmin
       .from("employee_attendance_logs")
@@ -317,7 +416,11 @@ export async function POST(req: NextRequest) {
         check_in_distance_meters: distanceMeters,
         check_in_within_radius: withinRadius,
         status: "present",
-        branch_name: employee.branch_name,
+        branch_name: logBranchName,
+        detected_branch_id: detectedBranchId,
+        detected_branch_name: detectedBranchName,
+        branch_distance_meters: distanceMeters,
+        branch_within_radius: withinRadius,
         device_info: getDeviceInfo(req),
         ip_address: getClientIp(req),
         erp_sync_status: "pending",
@@ -338,6 +441,13 @@ export async function POST(req: NextRequest) {
         employee,
         attendance,
         action: "check_in",
+        detected_branch: detectedBranch
+          ? {
+              id: detectedBranch.id,
+              branch_name: detectedBranch.branch_name,
+              branch_code: detectedBranch.branch_code,
+            }
+          : null,
         location: {
           latitude,
           longitude,
@@ -347,7 +457,11 @@ export async function POST(req: NextRequest) {
         },
         message:
           withinRadius === false
-            ? "Check-in saved, but location is outside allowed radius."
+            ? `Check-in saved, but location is outside allowed radius${
+                detectedBranchName ? ` for ${detectedBranchName}` : ""
+              }.`
+            : detectedBranchName
+            ? `Check-in saved successfully at ${detectedBranchName}.`
             : "Check-in saved successfully.",
       });
     }
@@ -360,6 +474,11 @@ export async function POST(req: NextRequest) {
         check_out_longitude: longitude,
         check_out_distance_meters: distanceMeters,
         check_out_within_radius: withinRadius,
+        detected_branch_id: detectedBranchId,
+        detected_branch_name: detectedBranchName,
+        branch_distance_meters: distanceMeters,
+        branch_within_radius: withinRadius,
+        branch_name: logBranchName,
         updated_at: now,
       })
       .eq("id", existingLog.id)
@@ -374,6 +493,13 @@ export async function POST(req: NextRequest) {
       employee,
       attendance,
       action: "check_out",
+      detected_branch: detectedBranch
+        ? {
+            id: detectedBranch.id,
+            branch_name: detectedBranch.branch_name,
+            branch_code: detectedBranch.branch_code,
+          }
+        : null,
       location: {
         latitude,
         longitude,
@@ -383,7 +509,11 @@ export async function POST(req: NextRequest) {
       },
       message:
         withinRadius === false
-          ? "Check-out saved, but location is outside allowed radius."
+          ? `Check-out saved, but location is outside allowed radius${
+              detectedBranchName ? ` for ${detectedBranchName}` : ""
+            }.`
+          : detectedBranchName
+          ? `Check-out saved successfully at ${detectedBranchName}.`
           : "Check-out saved successfully.",
     });
   } catch (error: any) {
