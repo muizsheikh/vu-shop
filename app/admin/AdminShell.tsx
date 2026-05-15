@@ -53,6 +53,10 @@ function isActivePath(pathname: string, href: string) {
     return pathname === "/admin";
   }
 
+  if (href === "/admin/attendance") {
+    return pathname === "/admin/attendance";
+  }
+
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -186,11 +190,18 @@ export default function AdminShell({ children }: AdminShellProps) {
         hidden: !userCanViewCustomers,
       },
       {
-       label: "Attendance",
-       href: "/admin/attendance",
-       icon: CalendarCheck,
-       badge: "HR",
-       hidden: !userCanViewReports,
+        label: "Attendance",
+        href: "/admin/attendance",
+        icon: CalendarCheck,
+        badge: "HR",
+        hidden: !userCanViewReports,
+      },
+      {
+        label: "Attendance Reports",
+        href: "/admin/attendance/reports",
+        icon: BarChart3,
+        badge: "Reports",
+        hidden: !userCanViewReports,
       },
       {
         label: "Users / Roles",
