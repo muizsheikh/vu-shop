@@ -100,6 +100,8 @@ type AttendanceLog = {
   check_out_distance_meters: number | null;
   check_in_within_radius: boolean | null;
   check_out_within_radius: boolean | null;
+  check_in_photo_url?: string | null;
+  check_out_photo_url?: string | null;
   detected_branch_name?: string | null;
   branch_distance_meters?: number | null;
   branch_within_radius?: boolean | null;
@@ -1518,7 +1520,7 @@ export default function AdminAttendancePage() {
           ) : logs.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-10 text-center"><h3 className="text-xl font-black text-neutral-950">No Attendance Logs Found</h3><p className="mt-2 text-sm text-neutral-500">Logs will appear here after employees check in or check out.</p></div>
           ) : (
-            <div className="overflow-x-auto"><table className="w-full min-w-[1450px] border-separate border-spacing-y-3"><thead><tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500"><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Branch / Date</th><th className="px-3 py-2">Detected Branch</th><th className="px-3 py-2">Check In</th><th className="px-3 py-2">Check Out</th><th className="px-3 py-2">Distance</th><th className="px-3 py-2">Radius</th><th className="px-3 py-2">ERP Sync</th><th className="px-3 py-2">Device / IP</th><th className="px-3 py-2">Action</th></tr></thead><tbody>
+            <div className="overflow-x-auto"><table className="w-full min-w-[1600px] border-separate border-spacing-y-3"><thead><tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500"><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Branch / Date</th><th className="px-3 py-2">Detected Branch</th><th className="px-3 py-2">Check In</th><th className="px-3 py-2">Check Out</th><th className="px-3 py-2">Distance</th><th className="px-3 py-2">Radius</th><th className="px-3 py-2">ERP Sync</th><th className="px-3 py-2">Photos</th><th className="px-3 py-2">Device / IP</th><th className="px-3 py-2">Action</th></tr></thead><tbody>
               {logs.map((log) => {
                 const employee = getEmployeeFromLog(log);
                 const homeBranch = employee?.branch_name || "No home branch";
@@ -1545,6 +1547,39 @@ export default function AdminAttendancePage() {
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="text-xs font-bold text-neutral-500">Branch distance: {formatDistance(log.branch_distance_meters)}</div><div className="mt-1 text-xs font-bold text-neutral-500">Check-in: {formatDistance(log.check_in_distance_meters)}</div><div className="mt-1 text-xs font-bold text-neutral-500">Check-out: {formatDistance(log.check_out_distance_meters)}</div></td>
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getRadiusClasses(finalRadius)}`}>{getRadiusText(finalRadius)}</span></td>
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getErpClasses(log.erp_sync_status)}`}>{log.erp_sync_status || "pending"}</span>{log.erp_error ? <div className="mt-2 max-w-[260px] text-xs font-bold text-red-600">{log.erp_error}</div> : null}</td>
+                  <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                    <div className="flex min-w-[150px] flex-col gap-2">
+                      {log.check_in_photo_url ? (
+                        <a
+                          href={log.check_in_photo_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-1 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-black uppercase text-green-700 transition hover:bg-green-100"
+                        >
+                          Check-in Photo <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      ) : (
+                        <span className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-black uppercase text-neutral-500">
+                          No check-in photo
+                        </span>
+                      )}
+
+                      {log.check_out_photo_url ? (
+                        <a
+                          href={log.check_out_photo_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-black uppercase text-blue-700 transition hover:bg-blue-100"
+                        >
+                          Check-out Photo <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      ) : (
+                        <span className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-black uppercase text-neutral-500">
+                          No check-out photo
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="max-w-[280px] truncate text-xs font-bold text-neutral-600">{log.device_info || "No device info"}</div><div className="mt-1 text-xs font-bold text-neutral-500">IP: {log.ip_address || "Not available"}</div></td>
                   <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
                     <button
