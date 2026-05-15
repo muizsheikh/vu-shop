@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   BarChart3,
-  CalendarDays,
   CheckCircle2,
   CreditCard,
+  Download,
   Loader2,
   MapPin,
   PackageCheck,
@@ -16,7 +16,6 @@ import {
   ShoppingBag,
   UsersRound,
   Wallet,
-  XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { getOrderStatusLabel, normalizeOrderStatus } from "@/lib/admin";
@@ -70,22 +69,6 @@ type TopCustomer = {
   orders: number;
   revenue: number;
   last_order_at: string | null;
-};
-
-type RecentOrder = {
-  id: string;
-  sales_order: string | null;
-  payment_method: string | null;
-  status: string | null;
-  total_amount: number | null;
-  currency: string | null;
-  customer_name: string | null;
-  customer_email: string | null;
-  customer_phone: string | null;
-  city: string | null;
-  address_line1: string | null;
-  items: any[] | null;
-  created_at: string;
 };
 
 const DEFAULT_SUMMARY: ReportSummary = {
@@ -188,6 +171,7 @@ export default function AdminReportsPage() {
   const [accessError, setAccessError] = useState("");
 
   const [loadingReports, setLoadingReports] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const [errorText, setErrorText] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
 
@@ -196,7 +180,6 @@ export default function AdminReportsPage() {
   const [paymentSummary, setPaymentSummary] = useState<PaymentSummary[]>([]);
   const [citySummary, setCitySummary] = useState<CitySummary[]>([]);
   const [topCustomers, setTopCustomers] = useState<TopCustomer[]>([]);
-  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
 
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
@@ -240,17 +223,16 @@ export default function AdminReportsPage() {
       setAllowed(true);
       setSummary(json?.summary || DEFAULT_SUMMARY);
       setStatusBreakdown(
-        Array.isArray(json?.status_breakdown) ? json.status_breakdown : []
+        Array.isArray(json?.status_breakdown) ? json.status_breakdown : [],
       );
       setPaymentSummary(
-        Array.isArray(json?.payment_summary) ? json.payment_summary : []
+        Array.isArray(json?.payment_summary) ? json.payment_summary : [],
       );
-      setCitySummary(Array.isArray(json?.city_summary) ? json.city_summary : []);
+      setCitySummary(
+        Array.isArray(json?.city_summary) ? json.city_summary : [],
+      );
       setTopCustomers(
-        Array.isArray(json?.top_customers) ? json.top_customers : []
-      );
-      setRecentOrders(
-        Array.isArray(json?.recent_orders) ? json.recent_orders : []
+        Array.isArray(json?.top_customers) ? json.top_customers : [],
       );
 
       if (json?.admin) {
@@ -264,9 +246,62 @@ export default function AdminReportsPage() {
       setPaymentSummary([]);
       setCitySummary([]);
       setTopCustomers([]);
-      setRecentOrders([]);
     } finally {
       setLoadingReports(false);
+    }
+  }
+
+  async function exportReportsCsv() {
+    setExportingCsv(true);
+    setErrorText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace("/account/login?next=/admin/reports");
+        return;
+      }
+
+      const params = new URLSearchParams();
+      params.set("date", dateFilter);
+
+      const res = await fetch(
+        `/api/admin/reports/export?${params.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || "Reports CSV export failed.");
+      }
+
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get("content-disposition") || "";
+      const fileNameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+      const fileName =
+        fileNameMatch?.[1] ||
+        `vape-ustad-reports_${dateFilter}_${new Date()
+          .toISOString()
+          .slice(0, 10)}.csv`;
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      setErrorText(error?.message || "Reports CSV export failed.");
+    } finally {
+      setExportingCsv(false);
     }
   }
 
@@ -287,7 +322,11 @@ export default function AdminReportsPage() {
         return;
       }
 
-      setAdminEmail(String(session.user?.email || "").trim().toLowerCase());
+      setAdminEmail(
+        String(session.user?.email || "")
+          .trim()
+          .toLowerCase(),
+      );
       setAllowed(true);
       setAuthLoading(false);
 
@@ -338,7 +377,7 @@ export default function AdminReportsPage() {
         className: "border-blue-200 bg-blue-50 text-blue-700",
       },
     ],
-    [summary, selectedPeriodLabel, dateFilter]
+    [summary, selectedPeriodLabel, dateFilter],
   );
 
   if (authLoading) {
@@ -397,11 +436,27 @@ export default function AdminReportsPage() {
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
               Business reporting foundation for revenue, order status, payment
               methods, cities and top customers. Attendance + ERPNext geo module
-              is now part of the roadmap.
+              is part of the roadmap.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={exportReportsCsv}
+              disabled={
+                exportingCsv || loadingReports || summary.total_orders === 0
+              }
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-green-200 bg-green-50 px-5 py-3 text-sm font-black text-green-700 transition hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {exportingCsv ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {exportingCsv ? "Exporting..." : "Export CSV"}
+            </button>
+
             <button
               type="button"
               onClick={() => loadReports()}
@@ -451,7 +506,7 @@ export default function AdminReportsPage() {
                   type="button"
                   onClick={() => changeDateFilter(filter.key)}
                   className={`rounded-full border px-4 py-2 text-xs font-black uppercase transition ${getDateFilterButtonClass(
-                    active
+                    active,
                   )}`}
                 >
                   {filter.label}
@@ -488,7 +543,9 @@ export default function AdminReportsPage() {
 
               <div className="mt-2 text-3xl font-black">{card.value}</div>
 
-              <div className="mt-2 text-sm font-bold opacity-70">{card.sub}</div>
+              <div className="mt-2 text-sm font-bold opacity-70">
+                {card.sub}
+              </div>
             </Link>
           );
         })}
@@ -521,7 +578,7 @@ export default function AdminReportsPage() {
                     <div>
                       <span
                         className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getStatusClasses(
-                          row.status
+                          row.status,
                         )}`}
                       >
                         {getOrderStatusLabel(row.status)}
@@ -708,9 +765,9 @@ export default function AdminReportsPage() {
                 Employee Attendance + ERPNext Sync + Geo Location
               </div>
               <p className="mt-2 text-sm font-bold leading-6 text-blue-700">
-                Planned module: employee check-in/check-out, branch-wise attendance,
-                geo-location validation, ERPNext Employee/Attendance linking,
-                late/absent/overtime reports and audit logs.
+                Planned module: employee check-in/check-out, branch-wise
+                attendance, geo-location validation, ERPNext Employee/Attendance
+                linking, late/absent/overtime reports and audit logs.
               </p>
             </div>
           </div>
