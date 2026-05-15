@@ -154,6 +154,8 @@ export default function AccountPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const [errorText, setErrorText] = useState("");
 
   const hasAdminAccess = Boolean(adminUser?.is_active && adminUser?.role);
 
@@ -190,82 +192,93 @@ export default function AccountPage() {
     }
   }
 
+  async function handleLogout() {
+    setSigningOut(true);
+
+    try {
+      await supabase.auth.signOut();
+      window.location.href = "/account/login";
+    } finally {
+      setSigningOut(false);
+    }
+  }
+
   useEffect(() => {
     async function loadAccount() {
       setLoading(true);
+      setErrorText("");
 
-      const { data: userData } = await supabase.auth.getUser();
-      const user = userData.user;
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        const user = userData.user;
 
-      if (!user) {
+        if (!user) {
+          setLoading(false);
+          return;
+        }
+
+        setEmail(user.email || "");
+
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("full_name, phone, city, address_line1")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        setProfile(profileData || null);
+
+        const { data: orderData } = await supabase
+          .from("orders")
+          .select(
+            "id, sales_order, payment_method, status, total_amount, currency, created_at, items"
+          )
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        setOrders(Array.isArray(orderData) ? orderData : []);
+
+        await checkAdminAccess();
+      } catch (error: any) {
+        setErrorText(error?.message || "Failed to load account.");
+      } finally {
         setLoading(false);
-        return;
       }
-
-      setEmail(user.email || "");
-
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("full_name, phone, city, address_line1")
-        .eq("id", user.id)
-        .single();
-
-      setProfile(profileData || null);
-
-      const { data: orderData } = await supabase
-        .from("orders")
-        .select(
-          "id, sales_order, payment_method, status, total_amount, currency, created_at, items"
-        )
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      setOrders((orderData || []) as OrderRow[]);
-
-      await checkAdminAccess();
-
-      setLoading(false);
     }
 
     loadAccount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function logout() {
-    await supabase.auth.signOut();
-    window.location.href = "/";
-  }
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-md rounded-[28px] border border-neutral-200 bg-white p-6 text-center shadow-sm">
-        Loading account...
+      <div className="mx-auto max-w-3xl px-4 py-12">
+        <div className="rounded-[30px] border border-neutral-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-neutral-200 border-t-[#a30105]" />
+          <p className="mt-4 text-sm font-bold text-neutral-600">
+            Loading your account...
+          </p>
+        </div>
       </div>
     );
   }
 
   if (!email) {
     return (
-      <div className="mx-auto max-w-md rounded-[28px] border border-neutral-200 bg-white p-6 text-center shadow-sm">
-        <h1 className="text-2xl font-black text-neutral-950">
-          Customer Account
-        </h1>
-        <p className="mt-2 text-sm text-neutral-500">
-          Account access ke liay login ya signup karein.
-        </p>
-
-        <div className="mt-6 grid gap-3">
-          <Link
-            href="/account/login"
-            className="rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-bold text-white"
-          >
-            Login
-          </Link>
+      <div className="mx-auto max-w-xl px-4 py-12">
+        <div className="rounded-[30px] border border-neutral-200 bg-white p-8 text-center shadow-sm">
+          <h1 className="text-3xl font-black text-neutral-950">
+            Login Required
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-neutral-500">
+            Please login to view your profile, orders and attendance.
+          </p>
 
           <Link
-            href="/account/signup"
-            className="rounded-2xl border border-neutral-200 bg-white px-5 py-3 text-sm font-bold text-neutral-900"
+            href="/account/login?next=/account"
+            className="mt-6 inline-flex rounded-2xl bg-[#a30105] px-6 py-3 text-sm font-black text-white transition hover:bg-[#8f0104]"
           >
-            Create Account
+            Login to Account
           </Link>
         </div>
       </div>
@@ -273,218 +286,280 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
+      <div className="rounded-[32px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
-              My Account
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-[#a30105]">
+              Vape Ustad Account
             </p>
+
             <h1 className="mt-3 text-3xl font-black text-neutral-950">
-              {profile?.full_name || "Customer"}
+              My Account
             </h1>
-            <p className="mt-1 text-sm text-neutral-500">{email}</p>
 
-            {hasAdminAccess ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                <div className="inline-flex rounded-full border border-[#a30105]/20 bg-[#fff7f7] px-3 py-1 text-xs font-black uppercase tracking-wider text-[#a30105]">
-                  Admin Access Enabled
-                </div>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
+              Manage your profile, order history and staff attendance access from one place.
+            </p>
 
-                <div className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black uppercase tracking-wider text-blue-700">
-                  Role: {adminUser?.role || "admin"}
-                </div>
-              </div>
-            ) : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-black text-neutral-700">
+                {email}
+              </span>
+
+              {hasAdminAccess ? (
+                <>
+                  <span className="rounded-full border border-green-200 bg-green-50 px-4 py-2 text-xs font-black uppercase text-green-700">
+                    Admin Access Enabled
+                  </span>
+
+                  <span className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-black uppercase text-blue-700">
+                    Role: {adminUser?.role}
+                  </span>
+                </>
+              ) : null}
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {hasAdminAccess ? (
-              <>
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={signingOut}
+            className="inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-black text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {signingOut ? "Signing out..." : "Logout"}
+          </button>
+        </div>
+
+        {errorText ? (
+          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+            {errorText}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="space-y-6">
+          <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+            <h2 className="text-xl font-black text-neutral-950">
+              Profile Details
+            </h2>
+
+            <div className="mt-5 space-y-3">
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                  Full Name
+                </p>
+                <p className="mt-1 text-sm font-bold text-neutral-950">
+                  {profile?.full_name || "Not added"}
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    Phone
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-neutral-950">
+                    {profile?.phone || "Not added"}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                    City
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-neutral-950">
+                    {profile?.city || "Not added"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wider text-neutral-500">
+                  Address
+                </p>
+                <p className="mt-1 text-sm font-bold leading-6 text-neutral-950">
+                  {profile?.address_line1 || "Not added"}
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/account/profile"
+              className="mt-5 inline-flex w-full items-center justify-center rounded-2xl border border-neutral-200 bg-white px-5 py-3 text-sm font-black text-neutral-950 transition hover:bg-neutral-50"
+            >
+              Edit Profile
+            </Link>
+          </div>
+
+          <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+            <h2 className="text-xl font-black text-neutral-950">
+              Quick Actions
+            </h2>
+
+            <div className="mt-5 grid gap-3">
+              <Link
+                href="/attendance"
+                className="rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] p-4 transition hover:border-[#a30105] hover:bg-[#fff1f1]"
+              >
+                <div className="text-sm font-black uppercase tracking-wider text-[#a30105]">
+                  My Attendance
+                </div>
+                <p className="mt-1 text-sm font-bold leading-6 text-neutral-600">
+                  Staff check-in / check-out with geo location.
+                </p>
+              </Link>
+
+              <Link
+                href="/account/orders"
+                className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 transition hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
+              >
+                <div className="text-sm font-black uppercase tracking-wider text-neutral-900">
+                  My Orders
+                </div>
+                <p className="mt-1 text-sm font-bold leading-6 text-neutral-600">
+                  View your full order history and tracking.
+                </p>
+              </Link>
+
+              <Link
+                href="/products"
+                className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 transition hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
+              >
+                <div className="text-sm font-black uppercase tracking-wider text-neutral-900">
+                  Continue Shopping
+                </div>
+                <p className="mt-1 text-sm font-bold leading-6 text-neutral-600">
+                  Browse latest products on Vape Ustad.
+                </p>
+              </Link>
+            </div>
+          </div>
+
+          {hasAdminAccess ? (
+            <div className="rounded-[30px] border border-[#a30105]/20 bg-[#fff7f7] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+              <h2 className="text-xl font-black text-neutral-950">
+                Admin Tools
+              </h2>
+
+              <p className="mt-2 text-sm font-bold leading-6 text-neutral-600">
+                Your account has admin-area access through database role permissions.
+              </p>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 <Link
                   href="/admin"
-                  className="rounded-2xl bg-[#a30105] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#8f0104]"
+                  className="inline-flex items-center justify-center rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-black text-white transition hover:bg-[#8f0104]"
                 >
                   Admin Dashboard
                 </Link>
 
                 <Link
                   href="/admin/orders"
-                  className="rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] px-4 py-2 text-sm font-bold text-[#a30105] shadow-sm transition hover:bg-[#fff1f1]"
+                  className="inline-flex items-center justify-center rounded-2xl border border-[#a30105]/20 bg-white px-5 py-3 text-sm font-black text-[#a30105] transition hover:bg-[#fff1f1]"
                 >
                   Manage Orders
                 </Link>
-              </>
-            ) : null}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-[#a30105]">
+                Order History
+              </p>
+
+              <h2 className="mt-2 text-2xl font-black text-neutral-950">
+                Recent Orders
+              </h2>
+            </div>
 
             <Link
-              href="/account/profile"
-              className="rounded-2xl border border-[#a30105]/15 bg-white px-4 py-2 text-sm font-bold text-neutral-900 transition hover:bg-[#fff7f7]"
+              href="/account/orders"
+              className="inline-flex rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-xs font-black uppercase text-neutral-800 transition hover:bg-neutral-50"
             >
-              Edit Profile
+              View All
             </Link>
-
-            <button
-              onClick={logout}
-              className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2 text-sm font-bold text-neutral-800"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
-            <div className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-              Phone
-            </div>
-            <div className="mt-1 font-semibold text-neutral-950">
-              {profile?.phone || "Not added"}
-            </div>
           </div>
 
-          <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
-            <div className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-              City
+          {orders.length === 0 ? (
+            <div className="mt-6 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center">
+              <h3 className="text-lg font-black text-neutral-950">
+                No Orders Yet
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-neutral-500">
+                Your recent orders will appear here after checkout.
+              </p>
+
+              <Link
+                href="/products"
+                className="mt-5 inline-flex rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-black text-white transition hover:bg-[#8f0104]"
+              >
+                Start Shopping
+              </Link>
             </div>
-            <div className="mt-1 font-semibold text-neutral-950">
-              {profile?.city || "Not added"}
-            </div>
-          </div>
+          ) : (
+            <div className="mt-6 space-y-4">
+              {orders.map((order) => {
+                const orderNumber =
+                  order.sales_order || `Order ${order.id.slice(0, 8)}`;
+                const totals = getOrderTotals(order.total_amount);
+                const itemCount = Array.isArray(order.items)
+                  ? order.items.length
+                  : 0;
 
-          <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 sm:col-span-2">
-            <div className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-              Address
-            </div>
-            <div className="mt-1 font-semibold text-neutral-950">
-              {profile?.address_line1 || "Not added"}
-            </div>
-          </div>
-        </div>
-      </div>
+                return (
+                  <Link
+                    key={order.id}
+                    href={`/account/orders/${order.id}`}
+                    className={`block rounded-2xl border p-4 transition hover:border-[#a30105]/30 hover:bg-[#fff7f7] ${getOrderCardClass(
+                      order.status
+                    )}`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="font-black text-neutral-950">
+                          {orderNumber}
+                        </div>
 
-      <div className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
-              Order History
-            </p>
-            <h2 className="mt-2 text-2xl font-black text-neutral-950">
-              My Orders
-            </h2>
-          </div>
+                        <div className="mt-1 text-xs font-bold text-neutral-500">
+                          {formatDate(order.created_at)}
+                        </div>
 
-          <Link
-            href="/products"
-            className="rounded-2xl border border-[#a30105]/15 bg-white px-4 py-2 text-sm font-bold text-neutral-900 hover:bg-[#fff7f7]"
-          >
-            Shop More
-          </Link>
-        </div>
-
-        {orders.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-6 text-center text-sm text-neutral-500">
-            Abhi koi order history nahi hai.
-          </div>
-        ) : (
-          <div className="mt-6 space-y-4">
-            {orders.map((order) => {
-              const orderItems = Array.isArray(order.items) ? order.items : [];
-              const totals = getOrderTotals(order.total_amount);
-
-              return (
-                <div
-                  key={order.id}
-                  className={`rounded-[24px] border p-4 transition ${getOrderCardClass(
-                    order.status
-                  )}`}
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="text-sm font-black text-neutral-950">
-                        {order.sales_order || `Order ${order.id.slice(0, 8)}`}
+                        <div className="mt-2 text-xs font-bold text-neutral-500">
+                          {itemCount} item{itemCount === 1 ? "" : "s"} •{" "}
+                          {order.payment_method || "COD"}
+                        </div>
                       </div>
-                      <div className="mt-1 text-xs text-neutral-500">
-                        {formatDate(order.created_at)}
-                      </div>
-                      <div className="mt-2 text-xs font-bold text-neutral-500">
-                        {getStatusMiniText(order.status)}
-                      </div>
-                    </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <span
-                        className={`rounded-full border px-3 py-1 text-xs font-bold uppercase ${getStatusBadgeClass(
-                          order.status
-                        )}`}
-                      >
-                        {getStatusLabel(order.status)}
-                      </span>
-
-                      <span className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-bold uppercase text-neutral-700">
-                        {order.payment_method || "cod"}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 space-y-2">
-                    {orderItems.slice(0, 4).map((it: any, idx: number) => (
-                      <div
-                        key={`${order.id}-${idx}`}
-                        className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2 text-sm"
-                      >
-                        <span className="line-clamp-1 font-medium text-neutral-800">
-                          {it?.name || "Item"}
+                      <div className="sm:text-right">
+                        <span
+                          className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getStatusBadgeClass(
+                            order.status
+                          )}`}
+                        >
+                          {getStatusLabel(order.status)}
                         </span>
-                        <span className="shrink-0 text-neutral-500">
-                          × {it?.qty || 1}
-                        </span>
-                      </div>
-                    ))}
 
-                    {orderItems.length > 4 ? (
-                      <div className="text-xs font-medium text-neutral-500">
-                        + {orderItems.length - 4} more items
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-4 grid gap-2 rounded-2xl border border-neutral-200 bg-white p-3 text-sm">
-                    <div className="flex items-center justify-between text-neutral-500">
-                      <span>Subtotal</span>
-                      <span>Rs {formatPKR(totals.subtotal)}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-neutral-500">
-                      <span>Delivery Charges</span>
-                      <span>Rs {formatPKR(totals.delivery)}</span>
-                    </div>
-
-                    <div className="border-t border-neutral-200 pt-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-neutral-500">
-                          Total
-                        </span>
-                        <span className="text-lg font-black text-neutral-950">
+                        <div className="mt-2 text-lg font-black text-neutral-950">
                           Rs {formatPKR(totals.total)}
-                        </span>
+                        </div>
+
+                        <div className="mt-1 text-xs font-bold text-neutral-500">
+                          {getStatusMiniText(order.status)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="mt-4 flex justify-end">
-                    <Link
-                      href={`/account/orders/${order.id}`}
-                      className="inline-flex items-center justify-center rounded-2xl border border-[#a30105]/15 bg-white px-4 py-2 text-sm font-bold text-neutral-900 transition hover:bg-[#fff7f7]"
-                    >
-                      View Details
-                    </Link>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
