@@ -131,6 +131,12 @@ export async function GET(req: NextRequest) {
         check_out_distance_meters,
         check_in_within_radius,
         check_out_within_radius,
+        check_in_photo_url,
+        check_out_photo_url,
+        detected_branch_id,
+        detected_branch_name,
+        branch_distance_meters,
+        branch_within_radius,
         status,
         branch_name,
         device_info,
@@ -181,7 +187,9 @@ export async function GET(req: NextRequest) {
       const needle = search.toLowerCase();
 
       logs = logs.filter((log: any) => {
-        const employee = log.admin_employees || {};
+        const employee = Array.isArray(log.admin_employees)
+          ? log.admin_employees[0] || {}
+          : log.admin_employees || {};
 
         const haystack = [
           employee.employee_name,
@@ -190,6 +198,7 @@ export async function GET(req: NextRequest) {
           employee.designation,
           employee.erp_employee_id,
           log.branch_name,
+          log.detected_branch_name,
           log.status,
           log.erp_sync_status,
         ]
@@ -208,14 +217,23 @@ export async function GET(req: NextRequest) {
         .length,
       outside_radius: logs.filter(
         (log: any) =>
+          log.branch_within_radius === false ||
           log.check_in_within_radius === false ||
           log.check_out_within_radius === false
       ).length,
       erp_pending: logs.filter((log: any) => log.erp_sync_status === "pending").length,
       erp_synced: logs.filter((log: any) => log.erp_sync_status === "synced").length,
       branches: Array.from(
-        new Set(logs.map((log: any) => log.branch_name).filter(Boolean))
+        new Set(
+          logs
+            .map((log: any) => log.detected_branch_name || log.branch_name)
+            .filter(Boolean)
+        )
       ),
+      with_check_in_photo: logs.filter((log: any) => Boolean(log.check_in_photo_url))
+        .length,
+      with_check_out_photo: logs.filter((log: any) => Boolean(log.check_out_photo_url))
+        .length,
     };
 
     return jsonResponse({
