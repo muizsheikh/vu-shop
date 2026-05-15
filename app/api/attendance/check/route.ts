@@ -16,6 +16,9 @@ type CheckPayload = {
   latitude?: number;
   longitude?: number;
   action?: "auto" | "check_in" | "check_out";
+  photo_url?: string | null;
+  check_in_photo_url?: string | null;
+  check_out_photo_url?: string | null;
 };
 
 type BranchLocation = {
@@ -38,6 +41,27 @@ function cleanNumber(value: unknown) {
   if (!Number.isFinite(number)) return null;
 
   return number;
+}
+
+function cleanText(value: unknown) {
+  const text = String(value || "").trim();
+  return text.length ? text : null;
+}
+
+function cleanPhotoUrl(value: unknown) {
+  const text = cleanText(value);
+
+  if (!text) return null;
+
+  if (!text.startsWith("https://") && !text.startsWith("http://")) {
+    return null;
+  }
+
+  if (text.length > 2000) {
+    return null;
+  }
+
+  return text;
 }
 
 function getTodayDate() {
@@ -197,6 +221,20 @@ function getEmployeeFallbackLocation(employee: any, latitude: number, longitude:
     allowed_radius_meters: allowedRadius,
     within_radius: distance <= allowedRadius,
   };
+}
+
+function getPhotoUrlForAction(body: CheckPayload, action: "check_in" | "check_out") {
+  if (action === "check_in") {
+    return (
+      cleanPhotoUrl(body.check_in_photo_url) ||
+      cleanPhotoUrl(body.photo_url)
+    );
+  }
+
+  return (
+    cleanPhotoUrl(body.check_out_photo_url) ||
+    cleanPhotoUrl(body.photo_url)
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -372,6 +410,19 @@ export async function POST(req: NextRequest) {
       action = !existingLog?.check_in_at ? "check_in" : "check_out";
     }
 
+    const photoUrl = getPhotoUrlForAction(body, action);
+
+    if (!photoUrl) {
+      return jsonResponse(
+        {
+          error: `Photo is required for ${
+            action === "check_in" ? "check-in" : "check-out"
+          }.`,
+        },
+        400
+      );
+    }
+
     if (action === "check_in" && existingLog?.check_in_at) {
       return jsonResponse(
         {
@@ -415,6 +466,7 @@ export async function POST(req: NextRequest) {
         check_in_longitude: longitude,
         check_in_distance_meters: distanceMeters,
         check_in_within_radius: withinRadius,
+        check_in_photo_url: photoUrl,
         status: "present",
         branch_name: logBranchName,
         detected_branch_id: detectedBranchId,
@@ -455,6 +507,7 @@ export async function POST(req: NextRequest) {
           allowed_radius_meters: allowedRadius,
           within_radius: withinRadius,
         },
+        photo_url: photoUrl,
         message:
           withinRadius === false
             ? `Check-in saved, but location is outside allowed radius${
@@ -474,6 +527,7 @@ export async function POST(req: NextRequest) {
         check_out_longitude: longitude,
         check_out_distance_meters: distanceMeters,
         check_out_within_radius: withinRadius,
+        check_out_photo_url: photoUrl,
         detected_branch_id: detectedBranchId,
         detected_branch_name: detectedBranchName,
         branch_distance_meters: distanceMeters,
@@ -507,6 +561,7 @@ export async function POST(req: NextRequest) {
         allowed_radius_meters: allowedRadius,
         within_radius: withinRadius,
       },
+      photo_url: photoUrl,
       message:
         withinRadius === false
           ? `Check-out saved, but location is outside allowed radius${
