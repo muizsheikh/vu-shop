@@ -1155,15 +1155,28 @@ export default function AdminAttendancePage() {
             <div className="overflow-x-auto"><table className="w-full min-w-[1320px] border-separate border-spacing-y-3"><thead><tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500"><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Branch / Date</th><th className="px-3 py-2">Detected Branch</th><th className="px-3 py-2">Check In</th><th className="px-3 py-2">Check Out</th><th className="px-3 py-2">Distance</th><th className="px-3 py-2">Radius</th><th className="px-3 py-2">ERP Sync</th><th className="px-3 py-2">Device / IP</th></tr></thead><tbody>
               {logs.map((log) => {
                 const employee = getEmployeeFromLog(log);
-                const finalRadius = log.branch_within_radius ?? log.check_out_within_radius ?? log.check_in_within_radius;
-                const detectedBranch = log.detected_branch_name || log.branch_name || employee?.branch_name || "No branch";
+                const homeBranch = employee?.branch_name || "No home branch";
+                const detectedBranch =
+                  log.detected_branch_name || log.branch_name || homeBranch || "No branch";
+                const finalRadius =
+                  log.branch_within_radius ??
+                  log.check_out_within_radius ??
+                  log.check_in_within_radius;
+                const cleanHomeBranch = String(homeBranch || "").trim().toLowerCase();
+                const cleanDetectedBranch = String(detectedBranch || "").trim().toLowerCase();
+                const isShiftedBranch =
+                  Boolean(cleanHomeBranch) &&
+                  Boolean(cleanDetectedBranch) &&
+                  cleanHomeBranch !== "no home branch" &&
+                  cleanDetectedBranch !== cleanHomeBranch;
+
                 return <tr key={log.id}>
                   <td className="rounded-l-2xl border-y border-l border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="flex items-start gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#a30105] shadow-sm"><UserRound className="h-5 w-5" /></div><div><div className="font-black text-neutral-950">{employee?.employee_name || "Employee"}</div><div className="mt-1 text-xs font-bold text-neutral-500">{employee?.employee_phone || employee?.employee_email || "No contact"}</div><div className="mt-1 text-xs font-bold text-neutral-500">{employee?.designation || "No designation"}</div></div></div></td>
-                  <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="font-black text-neutral-950">{log.branch_name || employee?.branch_name || "No branch"}</div><div className="mt-1 text-xs font-bold text-neutral-500">{formatOnlyDate(log.attendance_date)}</div></td>
-                  <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="font-black text-neutral-950">{detectedBranch}</div><div className="mt-1 text-xs font-bold text-neutral-500">Distance: {formatDistance(log.branch_distance_meters)}</div></td>
+                  <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="font-black text-neutral-950">{homeBranch}</div><div className="mt-1 text-xs font-bold text-neutral-500">Date: {formatOnlyDate(log.attendance_date)}</div><div className="mt-2 inline-flex rounded-full border border-neutral-200 bg-white px-3 py-1 text-[10px] font-black uppercase text-neutral-600">Home Branch</div></td>
+                  <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="font-black text-neutral-950">{detectedBranch}</div><div className="mt-1 text-xs font-bold text-neutral-500">Branch distance: {formatDistance(log.branch_distance_meters)}</div>{isShiftedBranch ? <div className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase text-amber-700">Shifted Branch</div> : <div className="mt-2 inline-flex rounded-full border border-green-200 bg-green-50 px-3 py-1 text-[10px] font-black uppercase text-green-700">Home Branch</div>}</td>
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="text-sm font-black text-neutral-950">{formatDate(log.check_in_at)}</div></td>
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="text-sm font-black text-neutral-950">{formatDate(log.check_out_at)}</div></td>
-                  <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="text-xs font-bold text-neutral-500">Branch: {formatDistance(log.branch_distance_meters)}</div><div className="mt-1 text-xs font-bold text-neutral-500">In: {formatDistance(log.check_in_distance_meters)}</div><div className="mt-1 text-xs font-bold text-neutral-500">Out: {formatDistance(log.check_out_distance_meters)}</div></td>
+                  <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="text-xs font-bold text-neutral-500">Branch distance: {formatDistance(log.branch_distance_meters)}</div><div className="mt-1 text-xs font-bold text-neutral-500">Check-in: {formatDistance(log.check_in_distance_meters)}</div><div className="mt-1 text-xs font-bold text-neutral-500">Check-out: {formatDistance(log.check_out_distance_meters)}</div></td>
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getRadiusClasses(finalRadius)}`}>{getRadiusText(finalRadius)}</span></td>
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getErpClasses(log.erp_sync_status)}`}>{log.erp_sync_status || "pending"}</span>{log.erp_error ? <div className="mt-2 max-w-[260px] text-xs font-bold text-red-600">{log.erp_error}</div> : null}</td>
                   <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="max-w-[280px] truncate text-xs font-bold text-neutral-600">{log.device_info || "No device info"}</div><div className="mt-1 text-xs font-bold text-neutral-500">IP: {log.ip_address || "Not available"}</div></td>
