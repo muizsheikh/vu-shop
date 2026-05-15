@@ -331,6 +331,7 @@ export default function AdminAttendancePage() {
   const [branchSummary, setBranchSummary] = useState<BranchSummary>(DEFAULT_BRANCH_SUMMARY);
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [savingBranch, setSavingBranch] = useState(false);
+  const [deletingBranch, setDeletingBranch] = useState<string | null>(null);
   const [showBranchForm, setShowBranchForm] = useState(false);
   const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
   const [branchForm, setBranchForm] = useState<BranchForm>(DEFAULT_BRANCH_FORM);
@@ -689,6 +690,58 @@ export default function AdminAttendancePage() {
       setBranchErrorText(error?.message || "Failed to save branch location.");
     } finally {
       setSavingBranch(false);
+    }
+  }
+
+  async function deleteBranchLocation(branch: BranchRow) {
+    const branchName = branch.branch_name || "this branch";
+
+    if (
+      !window.confirm(
+        `Are you sure you want to delete branch location "${branchName}"? Attendance logs will stay safe.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingBranch(branch.id);
+    setBranchErrorText("");
+    setBranchSuccessText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace("/account/login?next=/admin/attendance");
+        return;
+      }
+
+      const res = await fetch(`/api/admin/attendance/branches/${branch.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to delete branch location.");
+      }
+
+      setBranchSuccessText(json?.message || "Branch location deleted successfully.");
+
+      if (editingBranchId === branch.id) {
+        setEditingBranchId(null);
+        setBranchForm(DEFAULT_BRANCH_FORM);
+        setShowBranchForm(false);
+      }
+
+      await loadBranches({ tokenFromCheck: token });
+    } catch (error: any) {
+      setBranchErrorText(error?.message || "Failed to delete branch location.");
+    } finally {
+      setDeletingBranch(null);
     }
   }
 
@@ -1231,6 +1284,15 @@ export default function AdminAttendancePage() {
                                 Maps <ExternalLink className="h-3.5 w-3.5" />
                               </a>
                             ) : null}
+                            <button
+                              type="button"
+                              onClick={() => deleteBranchLocation(branch)}
+                              disabled={deletingBranch === branch.id}
+                              className="inline-flex items-center gap-1 rounded-xl border border-red-200 bg-white px-4 py-2 text-xs font-black uppercase text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              {deletingBranch === branch.id ? "Deleting..." : "Delete"}
+                            </button>
                           </div>
                         </td>
                       </tr>
