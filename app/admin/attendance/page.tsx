@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Trash2,
   ShieldCheck,
   UserRound,
   UsersRound,
@@ -332,6 +333,7 @@ export default function AdminAttendancePage() {
   const [errorText, setErrorText] = useState("");
   const [successText, setSuccessText] = useState("");
   const [logsErrorText, setLogsErrorText] = useState("");
+  const [clearingLogs, setClearingLogs] = useState<string | null>(null);
 
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
@@ -681,6 +683,75 @@ export default function AdminAttendancePage() {
     setLogBranchFilter("");
     setLogDateFilter("today");
     loadLogs({ searchValue: "", branchValue: "", dateValue: "today" });
+  }
+
+  async function clearAttendanceLogs(
+    mode: "today" | "single" | "employee" | "all",
+    options?: { logId?: string; employeeId?: string; employeeName?: string }
+  ) {
+    const confirmMessage =
+      mode === "today"
+        ? "Are you sure you want to clear today's attendance logs?"
+        : mode === "single"
+        ? "Are you sure you want to delete this attendance log?"
+        : mode === "employee"
+        ? `Are you sure you want to clear all attendance logs for ${
+            options?.employeeName || "this employee"
+          }?`
+        : "Are you sure you want to clear all attendance logs?";
+
+    if (!window.confirm(confirmMessage)) return;
+
+    const clearingKey =
+      mode === "single"
+        ? `single:${options?.logId || ""}`
+        : mode === "employee"
+        ? `employee:${options?.employeeId || ""}`
+        : mode;
+
+    setClearingLogs(clearingKey);
+    setLogsErrorText("");
+    setSuccessText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace("/account/login?next=/admin/attendance");
+        return;
+      }
+
+      const url =
+        mode === "all"
+          ? "/api/admin/attendance/logs/clear?confirm=CLEAR_ALL_ATTENDANCE_LOGS"
+          : "/api/admin/attendance/logs/clear";
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          mode,
+          log_id: options?.logId,
+          employee_id: options?.employeeId,
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to clear attendance logs.");
+      }
+
+      setSuccessText(json?.message || "Attendance logs cleared successfully.");
+      await loadLogs({ tokenFromCheck: token });
+    } catch (error: any) {
+      setLogsErrorText(error?.message || "Failed to clear attendance logs.");
+    } finally {
+      setClearingLogs(null);
+    }
   }
 
   useEffect(() => {
@@ -1106,7 +1177,7 @@ export default function AdminAttendancePage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1100px] border-separate border-spacing-y-3">
-              <thead><tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500"><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Home Branch</th><th className="px-3 py-2">ERP Link</th><th className="px-3 py-2">Fallback Geo</th><th className="px-3 py-2">Radius</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Updated</th></tr></thead>
+              <thead><tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500"><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Home Branch</th><th className="px-3 py-2">ERP Link</th><th className="px-3 py-2">Fallback Geo</th><th className="px-3 py-2">Radius</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Updated</th><th className="px-3 py-2">Action</th></tr></thead>
               <tbody>
                 {employees.map((employee) => (
                   <tr key={employee.id}>
@@ -1116,7 +1187,23 @@ export default function AdminAttendancePage() {
                     <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="flex items-center gap-2 text-sm font-bold text-neutral-700"><MapPin className="h-4 w-4 text-[#a30105]" />{locationText(employee)}</div></td>
                     <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="font-bold text-neutral-800">{employee.allowed_radius_meters || 150}m</div></td>
                     <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">{employee.is_active ? <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-black uppercase text-green-700"><CheckCircle2 className="h-3.5 w-3.5" />Active</span> : <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-black uppercase text-red-700"><XCircle className="h-3.5 w-3.5" />Inactive</span>}</td>
-                    <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="text-sm font-bold text-neutral-700">{formatDate(employee.updated_at)}</div></td>
+                    <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="text-sm font-bold text-neutral-700">{formatDate(employee.updated_at)}</div></td>
+                    <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          clearAttendanceLogs("employee", {
+                            employeeId: employee.id,
+                            employeeName: employee.employee_name,
+                          })
+                        }
+                        disabled={clearingLogs === `employee:${employee.id}`}
+                        className="inline-flex items-center gap-1 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black uppercase text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {clearingLogs === `employee:${employee.id}` ? "Clearing..." : "Clear Logs"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1128,7 +1215,19 @@ export default function AdminAttendancePage() {
       <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div><p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">Attendance Logs</p><h2 className="mt-2 text-2xl font-black text-neutral-950">Check-in / Check-out History</h2><p className="mt-2 text-sm leading-6 text-neutral-500">Employee attendance logs with detected branch, distance, radius status and ERP sync status.</p></div>
-          <button type="button" onClick={() => loadLogs()} disabled={loadingLogs} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-5 py-3 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:opacity-60">{loadingLogs ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock3 className="h-4 w-4" />}Refresh Logs</button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => clearAttendanceLogs("today")}
+              disabled={Boolean(clearingLogs)}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-black text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Trash2 className="h-4 w-4" />
+              {clearingLogs === "today" ? "Clearing..." : "Clear Today Logs"}
+            </button>
+
+            <button type="button" onClick={() => loadLogs()} disabled={loadingLogs} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-5 py-3 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:opacity-60">{loadingLogs ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock3 className="h-4 w-4" />}Refresh Logs</button>
+          </div>
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1152,7 +1251,7 @@ export default function AdminAttendancePage() {
           ) : logs.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-10 text-center"><h3 className="text-xl font-black text-neutral-950">No Attendance Logs Found</h3><p className="mt-2 text-sm text-neutral-500">Logs will appear here after employees check in or check out.</p></div>
           ) : (
-            <div className="overflow-x-auto"><table className="w-full min-w-[1320px] border-separate border-spacing-y-3"><thead><tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500"><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Branch / Date</th><th className="px-3 py-2">Detected Branch</th><th className="px-3 py-2">Check In</th><th className="px-3 py-2">Check Out</th><th className="px-3 py-2">Distance</th><th className="px-3 py-2">Radius</th><th className="px-3 py-2">ERP Sync</th><th className="px-3 py-2">Device / IP</th></tr></thead><tbody>
+            <div className="overflow-x-auto"><table className="w-full min-w-[1450px] border-separate border-spacing-y-3"><thead><tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500"><th className="px-3 py-2">Employee</th><th className="px-3 py-2">Branch / Date</th><th className="px-3 py-2">Detected Branch</th><th className="px-3 py-2">Check In</th><th className="px-3 py-2">Check Out</th><th className="px-3 py-2">Distance</th><th className="px-3 py-2">Radius</th><th className="px-3 py-2">ERP Sync</th><th className="px-3 py-2">Device / IP</th><th className="px-3 py-2">Action</th></tr></thead><tbody>
               {logs.map((log) => {
                 const employee = getEmployeeFromLog(log);
                 const homeBranch = employee?.branch_name || "No home branch";
@@ -1179,7 +1278,18 @@ export default function AdminAttendancePage() {
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="text-xs font-bold text-neutral-500">Branch distance: {formatDistance(log.branch_distance_meters)}</div><div className="mt-1 text-xs font-bold text-neutral-500">Check-in: {formatDistance(log.check_in_distance_meters)}</div><div className="mt-1 text-xs font-bold text-neutral-500">Check-out: {formatDistance(log.check_out_distance_meters)}</div></td>
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getRadiusClasses(finalRadius)}`}>{getRadiusText(finalRadius)}</span></td>
                   <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getErpClasses(log.erp_sync_status)}`}>{log.erp_sync_status || "pending"}</span>{log.erp_error ? <div className="mt-2 max-w-[260px] text-xs font-bold text-red-600">{log.erp_error}</div> : null}</td>
-                  <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="max-w-[280px] truncate text-xs font-bold text-neutral-600">{log.device_info || "No device info"}</div><div className="mt-1 text-xs font-bold text-neutral-500">IP: {log.ip_address || "Not available"}</div></td>
+                  <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="max-w-[280px] truncate text-xs font-bold text-neutral-600">{log.device_info || "No device info"}</div><div className="mt-1 text-xs font-bold text-neutral-500">IP: {log.ip_address || "Not available"}</div></td>
+                  <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                    <button
+                      type="button"
+                      onClick={() => clearAttendanceLogs("single", { logId: log.id })}
+                      disabled={clearingLogs === `single:${log.id}`}
+                      className="inline-flex items-center gap-1 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-black uppercase text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {clearingLogs === `single:${log.id}` ? "Deleting..." : "Delete"}
+                    </button>
+                  </td>
                 </tr>;
               })}
             </tbody></table></div>
