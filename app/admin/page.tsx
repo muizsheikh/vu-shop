@@ -10,16 +10,15 @@ import {
   Clock3,
   CreditCard,
   Loader2,
+  MapPin,
   ShieldCheck,
   ShoppingBag,
   Truck,
+  UsersRound,
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import {
-  getOrderStatusLabel,
-  normalizeOrderStatus,
-} from "@/lib/admin";
+import { getOrderStatusLabel, normalizeOrderStatus } from "@/lib/admin";
 
 type OrderRow = {
   id: string;
@@ -51,6 +50,58 @@ type DateFilter =
   | "last_30_days"
   | "all_time";
 
+type DashboardStats = {
+  total_orders: number;
+  period_revenue: number;
+  delivered_revenue: number;
+  pending: number;
+  placed: number;
+  confirmed: number;
+  processing: number;
+  out_for_delivery: number;
+  delivered: number;
+  cancelled: number;
+};
+
+type CustomerSummary = {
+  total_customers_in_period: number;
+};
+
+type TopCity = {
+  city: string;
+  orders: number;
+  revenue: number;
+};
+
+type DashboardPermissions = {
+  can_view_orders: boolean;
+  can_view_customers: boolean;
+  can_view_reports: boolean;
+};
+
+const DEFAULT_STATS: DashboardStats = {
+  total_orders: 0,
+  period_revenue: 0,
+  delivered_revenue: 0,
+  pending: 0,
+  placed: 0,
+  confirmed: 0,
+  processing: 0,
+  out_for_delivery: 0,
+  delivered: 0,
+  cancelled: 0,
+};
+
+const DEFAULT_CUSTOMER_SUMMARY: CustomerSummary = {
+  total_customers_in_period: 0,
+};
+
+const DEFAULT_PERMISSIONS: DashboardPermissions = {
+  can_view_orders: false,
+  can_view_customers: false,
+  can_view_reports: false,
+};
+
 const DATE_FILTERS: { key: DateFilter; label: string; shortLabel: string }[] = [
   { key: "today", label: "Today", shortLabel: "Today" },
   { key: "yesterday", label: "Yesterday", shortLabel: "Yesterday" },
@@ -74,58 +125,8 @@ function formatDate(value: string) {
   }
 }
 
-function startOfDay(date: Date) {
-  const cloned = new Date(date);
-  cloned.setHours(0, 0, 0, 0);
-  return cloned;
-}
-
-function endOfDay(date: Date) {
-  const cloned = new Date(date);
-  cloned.setHours(23, 59, 59, 999);
-  return cloned;
-}
-
 function getDateFilterLabel(filter: DateFilter) {
   return DATE_FILTERS.find((item) => item.key === filter)?.label || "Today";
-}
-
-function isOrderInDateFilter(value: string, filter: DateFilter) {
-  if (filter === "all_time") return true;
-
-  const orderDate = new Date(value);
-  const now = new Date();
-
-  if (Number.isNaN(orderDate.getTime())) return false;
-
-  if (filter === "today") {
-    return orderDate >= startOfDay(now) && orderDate <= endOfDay(now);
-  }
-
-  if (filter === "yesterday") {
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    return (
-      orderDate >= startOfDay(yesterday) && orderDate <= endOfDay(yesterday)
-    );
-  }
-
-  if (filter === "last_7_days") {
-    const start = startOfDay(new Date(now));
-    start.setDate(start.getDate() - 6);
-
-    return orderDate >= start && orderDate <= endOfDay(now);
-  }
-
-  if (filter === "last_30_days") {
-    const start = startOfDay(new Date(now));
-    start.setDate(start.getDate() - 29);
-
-    return orderDate >= start && orderDate <= endOfDay(now);
-  }
-
-  return true;
 }
 
 function getStatusClasses(status: string | null | undefined) {
@@ -190,61 +191,45 @@ export default function AdminDashboardPage() {
   const [adminEmail, setAdminEmail] = useState("");
   const [accessError, setAccessError] = useState("");
 
-  const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [errorText, setErrorText] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
+
+  const [stats, setStats] = useState<DashboardStats>(DEFAULT_STATS);
+  const [customerSummary, setCustomerSummary] = useState<CustomerSummary>(
+    DEFAULT_CUSTOMER_SUMMARY
+  );
+  const [permissions, setPermissions] =
+    useState<DashboardPermissions>(DEFAULT_PERMISSIONS);
+  const [topCities, setTopCities] = useState<TopCity[]>([]);
+  const [recentOrders, setRecentOrders] = useState<OrderRow[]>([]);
 
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token || "";
   }
 
-  async function checkAdminAccess() {
-    const token = await getAccessToken();
-
-    if (!token) {
-      router.replace("/account/login?next=/admin");
-      return null;
-    }
-
-    const res = await fetch("/api/admin/me", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    const json = await res.json().catch(() => null);
-
-    if (!res.ok || !json?.allowed) {
-      setAllowed(false);
-      setAccessError(json?.error || "Admin access required.");
-      setAdminUser(json?.user || null);
-      setAdminEmail(json?.user?.email || "");
-      return null;
-    }
-
-    const user = json.user as AdminUser;
-    setAllowed(true);
-    setAdminUser(user);
-    setAdminEmail(user.email || "");
-
-    return token;
-  }
-
-  async function loadOrders(tokenFromCheck?: string) {
-    setLoadingOrders(true);
+  async function loadDashboard(options?: {
+    dateValue?: DateFilter;
+    tokenFromCheck?: string;
+  }) {
+    setLoadingDashboard(true);
     setErrorText("");
 
+    const nextDate = options?.dateValue ?? dateFilter;
+
     try {
-      const token = tokenFromCheck || (await getAccessToken());
+      const token = options?.tokenFromCheck || (await getAccessToken());
 
       if (!token) {
         router.replace("/account/login?next=/admin");
         return;
       }
 
-      const res = await fetch("/api/admin/orders", {
+      const params = new URLSearchParams();
+      params.set("date", nextDate);
+
+      const res = await fetch(`/api/admin/dashboard?${params.toString()}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -253,106 +238,66 @@ export default function AdminDashboardPage() {
       const json = await res.json().catch(() => null);
 
       if (!res.ok) {
-        throw new Error(json?.error || "Failed to load dashboard orders.");
+        setAllowed(false);
+        setAccessError(json?.error || "Admin access required.");
+        throw new Error(json?.error || "Failed to load dashboard data.");
       }
 
-      setOrders(Array.isArray(json?.orders) ? json.orders : []);
+      setAllowed(true);
+      setStats(json?.stats || DEFAULT_STATS);
+      setCustomerSummary(json?.customer_summary || DEFAULT_CUSTOMER_SUMMARY);
+      setPermissions(json?.permissions || DEFAULT_PERMISSIONS);
+      setTopCities(Array.isArray(json?.top_cities) ? json.top_cities : []);
+      setRecentOrders(
+        Array.isArray(json?.recent_orders) ? json.recent_orders : []
+      );
 
       if (json?.admin) {
         setAdminUser(json.admin);
         setAdminEmail(json.admin.email || "");
       }
     } catch (error: any) {
-      setErrorText(error?.message || "Failed to load dashboard orders.");
-      setOrders([]);
+      setErrorText(error?.message || "Failed to load dashboard data.");
+      setStats(DEFAULT_STATS);
+      setCustomerSummary(DEFAULT_CUSTOMER_SUMMARY);
+      setPermissions(DEFAULT_PERMISSIONS);
+      setTopCities([]);
+      setRecentOrders([]);
     } finally {
-      setLoadingOrders(false);
+      setLoadingDashboard(false);
     }
+  }
+
+  function changeDateFilter(nextFilter: DateFilter) {
+    setDateFilter(nextFilter);
+    loadDashboard({ dateValue: nextFilter });
   }
 
   useEffect(() => {
     async function initAdmin() {
       setAuthLoading(true);
 
-      const { data } = await supabase.auth.getUser();
-      const user = data.user;
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
 
-      if (!user) {
+      if (!session?.access_token) {
         router.replace("/account/login?next=/admin");
         return;
       }
 
-      setAdminEmail(String(user.email || "").trim().toLowerCase());
-
-      const token = await checkAdminAccess();
-
+      setAdminEmail(String(session.user?.email || "").trim().toLowerCase());
+      setAllowed(true);
       setAuthLoading(false);
 
-      if (token) {
-        await loadOrders(token);
-      }
+      await loadDashboard({
+        dateValue: "today",
+        tokenFromCheck: session.access_token,
+      });
     }
 
     initAdmin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
-
-  const filteredOrders = useMemo(() => {
-    return orders.filter((order) =>
-      isOrderInDateFilter(order.created_at, dateFilter)
-    );
-  }, [orders, dateFilter]);
-
-  const stats = useMemo(() => {
-    const totalRevenue = filteredOrders.reduce(
-      (sum, order) => sum + Number(order.total_amount || 0),
-      0
-    );
-
-    const deliveredRevenue = filteredOrders
-      .filter((order) => normalizeOrderStatus(order.status) === "delivered")
-      .reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
-
-    const pendingOrders = filteredOrders.filter((order) => {
-      const status = normalizeOrderStatus(order.status);
-      return (
-        status === "placed" ||
-        status === "confirmed" ||
-        status === "processing" ||
-        status === "out_for_delivery"
-      );
-    });
-
-    return {
-      totalOrders: filteredOrders.length,
-      periodRevenue: totalRevenue,
-      deliveredRevenue,
-      pending: pendingOrders.length,
-      placed: filteredOrders.filter(
-        (order) => normalizeOrderStatus(order.status) === "placed"
-      ).length,
-      confirmed: filteredOrders.filter(
-        (order) => normalizeOrderStatus(order.status) === "confirmed"
-      ).length,
-      processing: filteredOrders.filter(
-        (order) => normalizeOrderStatus(order.status) === "processing"
-      ).length,
-      outForDelivery: filteredOrders.filter(
-        (order) => normalizeOrderStatus(order.status) === "out_for_delivery"
-      ).length,
-      delivered: filteredOrders.filter(
-        (order) => normalizeOrderStatus(order.status) === "delivered"
-      ).length,
-      cancelled: filteredOrders.filter(
-        (order) => normalizeOrderStatus(order.status) === "cancelled"
-      ).length,
-    };
-  }, [filteredOrders]);
-
-  const latestOrders = useMemo(
-    () => filteredOrders.slice(0, 8),
-    [filteredOrders]
-  );
 
   const statusBreakdown = [
     { key: "placed", label: "Placed", value: stats.placed },
@@ -361,7 +306,7 @@ export default function AdminDashboardPage() {
     {
       key: "out_for_delivery",
       label: "Out for Delivery",
-      value: stats.outForDelivery,
+      value: stats.out_for_delivery,
     },
     { key: "delivered", label: "Delivered", value: stats.delivered },
     { key: "cancelled", label: "Cancelled", value: stats.cancelled },
@@ -372,6 +317,11 @@ export default function AdminDashboardPage() {
   const pendingOrdersHref = getOrdersHref(dateFilter, "pending");
   const deliveredOrdersHref = getOrdersHref(dateFilter, "delivered");
   const cancelledOrdersHref = getOrdersHref(dateFilter, "cancelled");
+
+  const periodCustomersHref =
+    dateFilter === "all_time"
+      ? "/admin/customers"
+      : `/admin/customers?date=${dateFilter}`;
 
   if (authLoading) {
     return (
@@ -384,7 +334,7 @@ export default function AdminDashboardPage() {
     );
   }
 
-  if (!allowed) {
+  if (!allowed && accessError) {
     return (
       <div className="mx-auto max-w-md rounded-[28px] border border-red-200 bg-white p-6 text-center shadow-sm">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
@@ -427,8 +377,8 @@ export default function AdminDashboardPage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-              Monitor website orders, revenue, active workload and the latest
-              customer activity from one central dashboard.
+              API-powered dashboard for website orders, revenue, workload,
+              customer activity and city performance.
             </p>
           </div>
 
@@ -443,11 +393,11 @@ export default function AdminDashboardPage() {
 
             <button
               type="button"
-              onClick={() => loadOrders()}
-              disabled={loadingOrders}
+              onClick={() => loadDashboard()}
+              disabled={loadingDashboard}
               className="inline-flex items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loadingOrders ? (
+              {loadingDashboard ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Clock3 className="h-4 w-4" />
@@ -467,7 +417,7 @@ export default function AdminDashboardPage() {
           </span>
 
           <span className="rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-black uppercase text-neutral-600">
-            Orders Loaded: {orders.length}
+            Recent Orders: {recentOrders.length}
           </span>
 
           <span className="rounded-full border border-[#a30105]/20 bg-[#fff7f7] px-4 py-2 text-xs font-black uppercase text-[#a30105]">
@@ -484,7 +434,7 @@ export default function AdminDashboardPage() {
                 <button
                   key={filter.key}
                   type="button"
-                  onClick={() => setDateFilter(filter.key)}
+                  onClick={() => changeDateFilter(filter.key)}
                   className={`rounded-full border px-4 py-2 text-xs font-black uppercase transition ${getDateFilterButtonClass(
                     active
                   )}`}
@@ -523,13 +473,13 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="mt-2 text-3xl font-black text-neutral-950">
-            {stats.totalOrders}
+            {stats.total_orders}
           </div>
 
           <div className="mt-2 text-sm text-neutral-500">
             Revenue:{" "}
             <span className="font-black text-neutral-950">
-              Rs {formatPKR(stats.periodRevenue)}
+              Rs {formatPKR(stats.period_revenue)}
             </span>
           </div>
 
@@ -590,7 +540,7 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="mt-2 text-3xl font-black text-green-800">
-            Rs {formatPKR(stats.deliveredRevenue)}
+            Rs {formatPKR(stats.delivered_revenue)}
           </div>
 
           <div className="mt-2 text-sm text-green-700">
@@ -626,7 +576,7 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="mt-2 text-sm text-red-700">
-            Period Orders: {stats.totalOrders}
+            Period Orders: {stats.total_orders}
           </div>
 
           <div className="mt-4 inline-flex items-center gap-1 text-xs font-black uppercase text-red-700">
@@ -649,7 +599,7 @@ export default function AdminDashboardPage() {
               </h2>
 
               <p className="mt-1 text-sm text-neutral-500">
-                Showing {selectedPeriodLabel} orders.
+                Showing latest orders for {selectedPeriodLabel}.
               </p>
             </div>
 
@@ -662,20 +612,20 @@ export default function AdminDashboardPage() {
             </Link>
           </div>
 
-          {loadingOrders ? (
+          {loadingDashboard ? (
             <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-8 text-center">
               <Loader2 className="mx-auto h-6 w-6 animate-spin text-[#a30105]" />
               <p className="mt-3 text-sm font-bold text-neutral-600">
                 Loading latest orders...
               </p>
             </div>
-          ) : latestOrders.length === 0 ? (
+          ) : recentOrders.length === 0 ? (
             <div className="mt-6 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center text-sm text-neutral-500">
               No orders found for {selectedPeriodLabel}.
             </div>
           ) : (
             <div className="mt-6 space-y-3">
-              {latestOrders.map((order) => {
+              {recentOrders.map((order) => {
                 const orderNumber =
                   order.sales_order || `Order ${order.id.slice(0, 8)}`;
                 const status = normalizeOrderStatus(order.status);
@@ -739,8 +689,8 @@ export default function AdminDashboardPage() {
             <div className="mt-6 space-y-3">
               {statusBreakdown.map((item) => {
                 const percent =
-                  stats.totalOrders > 0
-                    ? Math.round((item.value / stats.totalOrders) * 100)
+                  stats.total_orders > 0
+                    ? Math.round((item.value / stats.total_orders) * 100)
                     : 0;
 
                 return (
@@ -793,7 +743,7 @@ export default function AdminDashboardPage() {
                   Period Revenue
                 </div>
                 <div className="mt-2 text-2xl font-black text-neutral-950">
-                  Rs {formatPKR(stats.periodRevenue)}
+                  Rs {formatPKR(stats.period_revenue)}
                 </div>
               </Link>
 
@@ -806,7 +756,7 @@ export default function AdminDashboardPage() {
                   Period Orders
                 </div>
                 <div className="mt-2 text-2xl font-black text-neutral-950">
-                  {stats.totalOrders}
+                  {stats.total_orders}
                 </div>
               </Link>
 
@@ -827,25 +777,28 @@ export default function AdminDashboardPage() {
 
           <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
             <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
-              All Time
+              Customers
             </p>
 
             <h2 className="mt-2 text-2xl font-black text-neutral-950">
-              Loaded Data
+              Customer Activity
             </h2>
 
             <div className="mt-6 grid gap-3">
-              <Link
-                href="/admin/orders"
-                className="block rounded-2xl border border-neutral-200 bg-neutral-50 p-4 transition hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
-              >
-                <div className="text-xs font-bold uppercase tracking-wider text-neutral-500">
-                  All Loaded Orders
-                </div>
-                <div className="mt-2 text-2xl font-black text-neutral-950">
-                  {orders.length}
-                </div>
-              </Link>
+              {permissions.can_view_customers ? (
+                <Link
+                  href={periodCustomersHref}
+                  className="block rounded-2xl border border-neutral-200 bg-neutral-50 p-4 transition hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
+                >
+                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-500">
+                    <UsersRound className="h-4 w-4" />
+                    Customers In Period
+                  </div>
+                  <div className="mt-2 text-2xl font-black text-neutral-950">
+                    {customerSummary.total_customers_in_period}
+                  </div>
+                </Link>
+              ) : null}
 
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
                 <div className="text-xs font-bold uppercase tracking-wider text-neutral-500">
@@ -855,6 +808,50 @@ export default function AdminDashboardPage() {
                   {selectedPeriodLabel}
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+            <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
+              Cities
+            </p>
+
+            <h2 className="mt-2 text-2xl font-black text-neutral-950">
+              Top Cities
+            </h2>
+
+            <div className="mt-6 space-y-3">
+              {topCities.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-5 text-center text-sm text-neutral-500">
+                  No city data for this period.
+                </div>
+              ) : (
+                topCities.map((city) => (
+                  <Link
+                    key={city.city}
+                    href={`/admin/orders?search=${encodeURIComponent(
+                      city.city
+                    )}${dateFilter !== "all_time" ? `&date=${dateFilter}` : ""}`}
+                    className="block rounded-2xl border border-neutral-200 bg-neutral-50 p-4 transition hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 text-sm font-black text-neutral-950">
+                          <MapPin className="h-4 w-4 text-[#a30105]" />
+                          {city.city}
+                        </div>
+                        <div className="mt-1 text-xs font-bold text-neutral-500">
+                          {city.orders} orders
+                        </div>
+                      </div>
+
+                      <div className="text-right text-sm font-black text-neutral-950">
+                        Rs {formatPKR(city.revenue)}
+                      </div>
+                    </div>
+                  </Link>
+                ))
+              )}
             </div>
           </div>
         </div>
