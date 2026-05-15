@@ -14,6 +14,7 @@ import {
   Link2,
   MapPin,
   Navigation,
+  Pencil,
   Plus,
   RefreshCw,
   Save,
@@ -157,6 +158,11 @@ type EmployeeForm = {
   notes: string;
 };
 
+type EmployeeEditForm = EmployeeForm & {
+  user_id: string | null;
+  is_active: boolean;
+};
+
 type BranchForm = {
   branch_name: string;
   branch_code: string;
@@ -206,6 +212,12 @@ const DEFAULT_FORM: EmployeeForm = {
   allowed_longitude: "",
   allowed_radius_meters: "150",
   notes: "",
+};
+
+const DEFAULT_EDIT_FORM: EmployeeEditForm = {
+  ...DEFAULT_FORM,
+  user_id: null,
+  is_active: true,
 };
 
 const DEFAULT_BRANCH_FORM: BranchForm = {
@@ -352,6 +364,9 @@ export default function AdminAttendancePage() {
   const [activeFilter, setActiveFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<EmployeeForm>(DEFAULT_FORM);
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<EmployeeEditForm>(DEFAULT_EDIT_FORM);
+  const [savingEmployeeUpdate, setSavingEmployeeUpdate] = useState(false);
 
   const [errorText, setErrorText] = useState("");
   const [successText, setSuccessText] = useState("");
@@ -809,6 +824,109 @@ export default function AdminAttendancePage() {
     setForm((current) => ({ ...current, [key]: value }));
     setErrorText("");
     setSuccessText("");
+  }
+
+  function updateEditForm(key: keyof EmployeeEditForm, value: string | boolean | null) {
+    setEditForm((current) => ({ ...current, [key]: value }));
+    setErrorText("");
+    setSuccessText("");
+  }
+
+  function startEditEmployee(employee: EmployeeRow) {
+    setEditingEmployeeId(employee.id);
+    setEditForm({
+      user_id: employee.user_id || null,
+      employee_name: employee.employee_name || "",
+      employee_email: employee.employee_email || "",
+      employee_phone: employee.employee_phone || "",
+      erp_employee_id: employee.erp_employee_id || "",
+      branch_name: employee.branch_name || "",
+      designation: employee.designation || "",
+      allowed_latitude:
+        employee.allowed_latitude === null || employee.allowed_latitude === undefined
+          ? ""
+          : String(employee.allowed_latitude),
+      allowed_longitude:
+        employee.allowed_longitude === null || employee.allowed_longitude === undefined
+          ? ""
+          : String(employee.allowed_longitude),
+      allowed_radius_meters: String(employee.allowed_radius_meters || 150),
+      notes: employee.notes || "",
+      is_active: employee.is_active !== false,
+    });
+    setShowForm(false);
+    setErrorText("");
+    setSuccessText("");
+
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        document.getElementById("employee-edit-panel")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 50);
+    }
+  }
+
+  function cancelEditEmployee() {
+    setEditingEmployeeId(null);
+    setEditForm(DEFAULT_EDIT_FORM);
+    setSavingEmployeeUpdate(false);
+  }
+
+  async function updateEmployee() {
+    if (!editingEmployeeId) return;
+
+    setSavingEmployeeUpdate(true);
+    setErrorText("");
+    setSuccessText("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace("/account/login?next=/admin/attendance");
+        return;
+      }
+
+      const res = await fetch(`/api/admin/attendance/employees/${editingEmployeeId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          employee_name: editForm.employee_name,
+          employee_email: editForm.employee_email,
+          employee_phone: editForm.employee_phone,
+          erp_employee_id: editForm.erp_employee_id,
+          branch_name: editForm.branch_name,
+          designation: editForm.designation,
+          allowed_latitude: editForm.allowed_latitude,
+          allowed_longitude: editForm.allowed_longitude,
+          allowed_radius_meters: editForm.allowed_radius_meters,
+          notes: editForm.notes,
+          is_active: editForm.is_active,
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to update employee.");
+      }
+
+      setSuccessText(json?.message || "Employee updated successfully.");
+      cancelEditEmployee();
+      await Promise.all([
+        loadEmployees({ tokenFromCheck: token }),
+        loadLogs({ tokenFromCheck: token }),
+      ]);
+    } catch (error: any) {
+      setErrorText(error?.message || "Failed to update employee.");
+    } finally {
+      setSavingEmployeeUpdate(false);
+    }
   }
 
   function updateBranchForm(key: keyof BranchForm, value: string | boolean) {
@@ -1334,6 +1452,120 @@ export default function AdminAttendancePage() {
         </div>
       ) : null}
 
+      {editingEmployeeId ? (
+        <div
+          id="employee-edit-panel"
+          className="rounded-[30px] border border-amber-200 bg-amber-50 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.06)]"
+        >
+          <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">Employee Edit</p>
+              <h2 className="mt-2 text-2xl font-black text-neutral-950">Update Employee Record</h2>
+              <p className="mt-2 text-sm font-bold leading-6 text-amber-700">
+                Employee master data yahan se update hoga. User link/unlink neeche table se hi manage hoga.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={cancelEditEmployee}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-5 py-3 text-sm font-black text-neutral-900 transition hover:bg-neutral-50"
+            >
+              <XCircle className="h-4 w-4" />
+              Cancel Edit
+            </button>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <input
+              value={editForm.employee_name}
+              onChange={(event) => updateEditForm("employee_name", event.target.value)}
+              placeholder="Employee Name *"
+              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-amber-700"
+            />
+            <input
+              value={editForm.branch_name}
+              onChange={(event) => updateEditForm("branch_name", event.target.value)}
+              placeholder="Home Branch Name *"
+              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-amber-700"
+            />
+            <input
+              value={editForm.employee_email}
+              onChange={(event) => updateEditForm("employee_email", event.target.value)}
+              placeholder="Employee Email"
+              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-amber-700"
+            />
+            <input
+              value={editForm.employee_phone}
+              onChange={(event) => updateEditForm("employee_phone", event.target.value)}
+              placeholder="Employee Phone"
+              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-amber-700"
+            />
+            <input
+              value={editForm.erp_employee_id}
+              onChange={(event) => updateEditForm("erp_employee_id", event.target.value)}
+              placeholder="ERPNext Employee ID"
+              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-amber-700"
+            />
+            <input
+              value={editForm.designation}
+              onChange={(event) => updateEditForm("designation", event.target.value)}
+              placeholder="Designation"
+              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-amber-700"
+            />
+            <input
+              value={editForm.allowed_latitude}
+              onChange={(event) => updateEditForm("allowed_latitude", event.target.value)}
+              placeholder="Fallback Latitude (optional)"
+              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-amber-700"
+            />
+            <input
+              value={editForm.allowed_longitude}
+              onChange={(event) => updateEditForm("allowed_longitude", event.target.value)}
+              placeholder="Fallback Longitude (optional)"
+              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-amber-700"
+            />
+            <input
+              value={editForm.allowed_radius_meters}
+              onChange={(event) => updateEditForm("allowed_radius_meters", event.target.value)}
+              placeholder="Fallback Radius Meters"
+              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-amber-700"
+            />
+            <label className="flex h-12 items-center gap-3 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-black text-neutral-800">
+              <input
+                type="checkbox"
+                checked={editForm.is_active}
+                onChange={(event) => updateEditForm("is_active", event.target.checked)}
+              />
+              Active Employee
+            </label>
+            <textarea
+              value={editForm.notes}
+              onChange={(event) => updateEditForm("notes", event.target.value)}
+              placeholder="Notes"
+              rows={3}
+              className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-amber-700 md:col-span-2"
+            />
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs font-bold text-amber-700">
+              Employee ID: {editingEmployeeId}
+            </div>
+
+            <button
+              type="button"
+              onClick={updateEmployee}
+              disabled={savingEmployeeUpdate}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#a30105] px-6 py-3 text-sm font-black text-white transition hover:bg-[#8f0104] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {savingEmployeeUpdate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {savingEmployeeUpdate ? "Updating..." : "Update Employee"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="rounded-[30px] border border-neutral-200 bg-white p-4 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
         <form onSubmit={(event) => { event.preventDefault(); submitSearch(search); }} className="flex flex-col gap-3 lg:flex-row">
           <div className="relative flex-1">
@@ -1434,6 +1666,15 @@ export default function AdminAttendancePage() {
                     <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top"><div className="text-sm font-bold text-neutral-700">{formatDate(employee.updated_at)}</div></td>
                     <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
                       <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => startEditEmployee(employee)}
+                          className="inline-flex items-center gap-1 rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-black uppercase text-blue-700 transition hover:bg-blue-50"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => linkEmployeeUser(employee.id, selectedUserId || null)}

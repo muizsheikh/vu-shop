@@ -75,6 +75,10 @@ function cleanRadius(value: unknown) {
   return Math.min(5000, Math.max(20, Math.floor(radius)));
 }
 
+function hasOwn(object: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
 function buildEmployeeResponse(employee: any) {
   return {
     id: employee.id,
@@ -167,6 +171,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     }
 
     const body = (await req.json().catch(() => ({}))) as EmployeePayload;
+    const rawBody = body as Record<string, unknown>;
 
     const employeeName = cleanRequiredText(body.employee_name);
     const branchName = cleanRequiredText(body.branch_name);
@@ -190,8 +195,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       return jsonResponse({ error: "Invalid longitude value." }, 400);
     }
 
-    const updatePayload = {
-      user_id: cleanText(body.user_id),
+    const updatePayload: Record<string, unknown> = {
       erp_employee_id: cleanText(body.erp_employee_id),
       employee_name: employeeName,
       employee_email: cleanText(body.employee_email),
@@ -205,6 +209,13 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       notes: cleanText(body.notes),
       updated_at: new Date().toISOString(),
     };
+
+    // Important: user_id is managed by the separate employee-user link API.
+    // Only update it from this route when the frontend intentionally sends user_id.
+    // This prevents normal employee edit from accidentally unlinking login accounts.
+    if (hasOwn(rawBody, "user_id")) {
+      updatePayload.user_id = cleanText(body.user_id);
+    }
 
     const { data, error } = await supabaseAdmin
       .from("admin_employees")
