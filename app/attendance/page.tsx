@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { ChangeEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  Camera,
   CheckCircle2,
   Clock3,
+  ImagePlus,
   Loader2,
   LogIn,
   LogOut,
@@ -15,6 +17,8 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+
+const ATTENDANCE_PHOTOS_BUCKET = "attendance-photos";
 
 type Employee = {
   id: string;
@@ -33,6 +37,8 @@ type Attendance = {
   check_out_distance_meters: number | null;
   check_in_within_radius: boolean | null;
   check_out_within_radius: boolean | null;
+  check_in_photo_url?: string | null;
+  check_out_photo_url?: string | null;
 };
 
 type StatusState = {
@@ -55,16 +61,38 @@ function formatDate(value: string | null | undefined) {
   }
 }
 
+function getFileExtension(file: File) {
+  const nameExtension = file.name.split(".").pop()?.toLowerCase();
+
+  if (nameExtension && /^[a-z0-9]+$/.test(nameExtension)) {
+    return nameExtension;
+  }
+
+  if (file.type === "image/png") return "png";
+  if (file.type === "image/webp") return "webp";
+  if (file.type === "image/heic") return "heic";
+
+  return "jpg";
+}
+
+function getActionLabel(action: "check_in" | "check_out") {
+  return action === "check_in" ? "Check In" : "Check Out";
+}
+
 export default function AttendancePage() {
   const router = useRouter();
 
   const [authLoading, setAuthLoading] = useState(true);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [attendance, setAttendance] = useState<Attendance | null>(null);
   const [status, setStatus] = useState<StatusState | null>(null);
+
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
 
   const [successText, setSuccessText] = useState("");
   const [errorText, setErrorText] = useState("");
@@ -126,6 +154,90 @@ export default function AttendancePage() {
     });
   }
 
+  function handlePhotoChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null;
+
+    setErrorText("");
+    setSuccessText("");
+
+    if (!file) {
+      setPhotoFile(null);
+      setPhotoPreviewUrl("");
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setPhotoFile(null);
+      setPhotoPreviewUrl("");
+      setErrorText("Please select a valid image/photo.");
+      return;
+    }
+
+    const maxSizeMb = 8;
+    const maxBytes = maxSizeMb * 1024 * 1024;
+
+    if (file.size > maxBytes) {
+      setPhotoFile(null);
+      setPhotoPreviewUrl("");
+      setErrorText(`Photo size must be under ${maxSizeMb}MB.`);
+      return;
+    }
+
+    if (photoPreviewUrl) {
+      URL.revokeObjectURL(photoPreviewUrl);
+    }
+
+    setPhotoFile(file);
+    setPhotoPreviewUrl(URL.createObjectURL(file));
+  }
+
+  function clearSelectedPhoto() {
+    if (photoPreviewUrl) {
+      URL.revokeObjectURL(photoPreviewUrl);
+    }
+
+    setPhotoFile(null);
+    setPhotoPreviewUrl("");
+  }
+
+  async function uploadAttendancePhoto(
+    action: "check_in" | "check_out",
+    file: File,
+    employeeId: string
+  ) {
+    const extension = getFileExtension(file);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const safeEmployeeId = employeeId.replace(/[^a-zA-Z0-9_-]/g, "");
+    const randomPart =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2);
+
+    const path = `${safeEmployeeId}/${action}/${timestamp}-${randomPart}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(ATTENDANCE_PHOTOS_BUCKET)
+      .upload(path, file, {
+        cacheControl: "3600",
+        contentType: file.type || "image/jpeg",
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(uploadError.message || "Photo upload failed.");
+    }
+
+    const { data } = supabase.storage
+      .from(ATTENDANCE_PHOTOS_BUCKET)
+      .getPublicUrl(path);
+
+    if (!data?.publicUrl) {
+      throw new Error("Photo uploaded but public URL was not generated.");
+    }
+
+    return data.publicUrl;
+  }
+
   async function submitAttendance(action: "check_in" | "check_out") {
     setSaving(true);
     setErrorText("");
@@ -139,7 +251,19 @@ export default function AttendancePage() {
         return;
       }
 
+      if (!employee?.id) {
+        throw new Error("Employee profile not found.");
+      }
+
+      if (!photoFile) {
+        throw new Error(`Please capture or select a photo before ${getActionLabel(action)}.`);
+      }
+
       const position = await getBrowserLocation();
+
+      setUploadingPhoto(true);
+      const photoUrl = await uploadAttendancePhoto(action, photoFile, employee.id);
+      setUploadingPhoto(false);
 
       const res = await fetch("/api/attendance/check", {
         method: "POST",
@@ -151,6 +275,9 @@ export default function AttendancePage() {
           action,
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
+          photo_url: photoUrl,
+          check_in_photo_url: action === "check_in" ? photoUrl : undefined,
+          check_out_photo_url: action === "check_out" ? photoUrl : undefined,
         }),
       });
 
@@ -160,6 +287,7 @@ export default function AttendancePage() {
         throw new Error(json?.error || "Attendance save failed.");
       }
 
+      clearSelectedPhoto();
       setSuccessText(json?.message || "Attendance saved successfully.");
       setEmployee(json?.employee || null);
       setAttendance(json?.attendance || null);
@@ -168,9 +296,10 @@ export default function AttendancePage() {
     } catch (error: any) {
       setErrorText(
         error?.message ||
-          "Location permission denied or attendance save failed."
+          "Location permission denied, photo upload failed, or attendance save failed."
       );
     } finally {
+      setUploadingPhoto(false);
       setSaving(false);
     }
   }
@@ -195,7 +324,19 @@ export default function AttendancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
+  useEffect(() => {
+    return () => {
+      if (photoPreviewUrl) {
+        URL.revokeObjectURL(photoPreviewUrl);
+      }
+    };
+  }, [photoPreviewUrl]);
+
   const nextAction = status?.next_action || "check_in";
+  const currentPhotoUrl =
+    nextAction === "check_out"
+      ? attendance?.check_out_photo_url
+      : attendance?.check_in_photo_url;
 
   if (authLoading) {
     return (
@@ -230,8 +371,8 @@ export default function AttendancePage() {
           </div>
 
           <p className="mt-4 text-sm leading-6 text-neutral-500">
-            Geo-location based employee check-in/check-out system. Please allow
-            location permission when asked.
+            Geo-location + photo based employee check-in/check-out system.
+            Please allow location and camera/photo permission when asked.
           </p>
         </div>
 
@@ -287,6 +428,17 @@ export default function AttendancePage() {
                       Distance: {attendance.check_in_distance_meters}m
                     </p>
                   ) : null}
+
+                  {attendance?.check_in_photo_url ? (
+                    <a
+                      href={attendance.check_in_photo_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex text-xs font-black uppercase text-[#a30105]"
+                    >
+                      View Check-in Photo
+                    </a>
+                  ) : null}
                 </div>
 
                 <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
@@ -305,8 +457,77 @@ export default function AttendancePage() {
                       Distance: {attendance.check_out_distance_meters}m
                     </p>
                   ) : null}
+
+                  {attendance?.check_out_photo_url ? (
+                    <a
+                      href={attendance.check_out_photo_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex text-xs font-black uppercase text-[#a30105]"
+                    >
+                      View Check-out Photo
+                    </a>
+                  ) : null}
                 </div>
               </div>
+
+              {nextAction !== "completed" ? (
+                <div className="mt-5 rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-[#a30105]">
+                      <Camera className="h-5 w-5" />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-black text-neutral-950">
+                        {getActionLabel(nextAction)} Photo Required
+                      </p>
+                      <p className="mt-1 text-xs font-bold leading-5 text-neutral-500">
+                        Camera se selfie/photo capture karein ya gallery se clear photo select karein.
+                      </p>
+
+                      <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-[#a30105]/20 bg-white px-4 py-3 text-sm font-black text-[#a30105] transition hover:bg-[#fff1f1]">
+                        <ImagePlus className="h-4 w-4" />
+                        Capture / Select Photo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="user"
+                          onChange={handlePhotoChange}
+                          className="hidden"
+                        />
+                      </label>
+
+                      {photoPreviewUrl ? (
+                        <div className="mt-4 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+                          <img
+                            src={photoPreviewUrl}
+                            alt="Attendance photo preview"
+                            className="max-h-72 w-full object-cover"
+                          />
+
+                          <button
+                            type="button"
+                            onClick={clearSelectedPhoto}
+                            className="w-full border-t border-neutral-200 bg-white px-4 py-3 text-xs font-black uppercase text-red-700"
+                          >
+                            Remove Photo
+                          </button>
+                        </div>
+                      ) : currentPhotoUrl ? (
+                        <a
+                          href={currentPhotoUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-3 inline-flex text-xs font-black uppercase text-[#a30105]"
+                        >
+                          View saved photo
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-5">
                 {nextAction === "completed" ? (
@@ -319,14 +540,14 @@ export default function AttendancePage() {
                 ) : (
                   <button
                     type="button"
-                    disabled={saving}
+                    disabled={saving || uploadingPhoto}
                     onClick={() => submitAttendance(nextAction)}
                     className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#a30105] px-5 py-4 text-sm font-black uppercase text-white transition hover:bg-[#8f0104] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {saving ? (
+                    {saving || uploadingPhoto ? (
                       <>
                         <Loader2 className="h-5 w-5 animate-spin" />
-                        Saving...
+                        {uploadingPhoto ? "Uploading Photo..." : "Saving..."}
                       </>
                     ) : nextAction === "check_in" ? (
                       <>
@@ -372,8 +593,8 @@ export default function AttendancePage() {
           <div className="flex gap-2 text-sm font-bold leading-6 text-blue-700">
             <Clock3 className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
-              Location accuracy depends on mobile GPS/browser permission. ERPNext
-              sync will be connected in next phase.
+              Location accuracy depends on mobile GPS/browser permission. Photo
+              is uploaded to secure Vape Ustad attendance storage.
             </span>
           </div>
         </div>
