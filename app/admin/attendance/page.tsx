@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   Building2,
+  CalendarDays,
   CheckCircle2,
+  Clock3,
   Loader2,
   MapPin,
   Plus,
@@ -42,10 +45,60 @@ type EmployeeRow = {
   updated_at: string;
 };
 
+type AttendanceEmployee = {
+  id: string;
+  employee_name: string | null;
+  employee_email: string | null;
+  employee_phone: string | null;
+  branch_name: string | null;
+  designation: string | null;
+  erp_employee_id: string | null;
+  allowed_radius_meters: number | null;
+};
+
+type AttendanceLog = {
+  id: string;
+  employee_id: string;
+  user_id: string | null;
+  attendance_date: string;
+  check_in_at: string | null;
+  check_out_at: string | null;
+  check_in_latitude: number | null;
+  check_in_longitude: number | null;
+  check_out_latitude: number | null;
+  check_out_longitude: number | null;
+  check_in_distance_meters: number | null;
+  check_out_distance_meters: number | null;
+  check_in_within_radius: boolean | null;
+  check_out_within_radius: boolean | null;
+  status: string | null;
+  branch_name: string | null;
+  device_info: string | null;
+  ip_address: string | null;
+  erp_sync_status: string | null;
+  erp_attendance_id: string | null;
+  erp_error: string | null;
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string;
+  admin_employees: AttendanceEmployee | AttendanceEmployee[] | null;
+};
+
 type SummaryState = {
   total: number;
   active: number;
   inactive: number;
+  branches: string[];
+};
+
+type LogsSummaryState = {
+  total: number;
+  checked_in: number;
+  checked_out: number;
+  open: number;
+  outside_radius: number;
+  erp_pending: number;
+  erp_synced: number;
   branches: string[];
 };
 
@@ -62,10 +115,28 @@ type EmployeeForm = {
   notes: string;
 };
 
+type DateFilter =
+  | "today"
+  | "yesterday"
+  | "last_7_days"
+  | "last_30_days"
+  | "all_time";
+
 const DEFAULT_SUMMARY: SummaryState = {
   total: 0,
   active: 0,
   inactive: 0,
+  branches: [],
+};
+
+const DEFAULT_LOGS_SUMMARY: LogsSummaryState = {
+  total: 0,
+  checked_in: 0,
+  checked_out: 0,
+  open: 0,
+  outside_radius: 0,
+  erp_pending: 0,
+  erp_synced: 0,
   branches: [],
 };
 
@@ -82,6 +153,14 @@ const DEFAULT_FORM: EmployeeForm = {
   notes: "",
 };
 
+const DATE_FILTERS: { key: DateFilter; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "last_7_days", label: "Last 7 Days" },
+  { key: "last_30_days", label: "Last 30 Days" },
+  { key: "all_time", label: "All Time" },
+];
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "Not available";
 
@@ -95,12 +174,69 @@ function formatDate(value: string | null | undefined) {
   }
 }
 
+function formatOnlyDate(value: string | null | undefined) {
+  if (!value) return "Not available";
+
+  try {
+    return new Date(`${value}T00:00:00`).toLocaleDateString("en-PK", {
+      dateStyle: "medium",
+    });
+  } catch {
+    return value;
+  }
+}
+
 function locationText(employee: EmployeeRow) {
   if (employee.allowed_latitude === null || employee.allowed_longitude === null) {
     return "Location not set";
   }
 
   return `${employee.allowed_latitude}, ${employee.allowed_longitude}`;
+}
+
+function getEmployeeFromLog(log: AttendanceLog) {
+  if (Array.isArray(log.admin_employees)) {
+    return log.admin_employees[0] || null;
+  }
+
+  return log.admin_employees || null;
+}
+
+function formatDistance(value: number | null | undefined) {
+  if (value === null || value === undefined) return "Not available";
+  return `${value}m`;
+}
+
+function getRadiusText(value: boolean | null | undefined) {
+  if (value === true) return "Inside radius";
+  if (value === false) return "Outside radius";
+  return "Radius not checked";
+}
+
+function getRadiusClasses(value: boolean | null | undefined) {
+  if (value === true) {
+    return "border-green-200 bg-green-50 text-green-700";
+  }
+
+  if (value === false) {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  return "border-neutral-200 bg-neutral-50 text-neutral-600";
+}
+
+function getErpClasses(value: string | null | undefined) {
+  const normalized = String(value || "pending").toLowerCase();
+
+  if (normalized === "synced") {
+    return "border-green-200 bg-green-50 text-green-700";
+  }
+
+  if (normalized === "failed" || normalized === "error") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  return "border-amber-200 bg-amber-50 text-amber-700";
 }
 
 export default function AdminAttendancePage() {
@@ -117,6 +253,14 @@ export default function AdminAttendancePage() {
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [savingEmployee, setSavingEmployee] = useState(false);
 
+  const [logs, setLogs] = useState<AttendanceLog[]>([]);
+  const [logsSummary, setLogsSummary] =
+    useState<LogsSummaryState>(DEFAULT_LOGS_SUMMARY);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logDateFilter, setLogDateFilter] = useState<DateFilter>("today");
+  const [logSearch, setLogSearch] = useState("");
+  const [logBranchFilter, setLogBranchFilter] = useState("");
+
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
@@ -125,6 +269,7 @@ export default function AdminAttendancePage() {
 
   const [errorText, setErrorText] = useState("");
   const [successText, setSuccessText] = useState("");
+  const [logsErrorText, setLogsErrorText] = useState("");
 
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
@@ -166,11 +311,14 @@ export default function AdminAttendancePage() {
         params.set("active", nextActive);
       }
 
-      const res = await fetch(`/api/admin/attendance/employees?${params.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await fetch(
+        `/api/admin/attendance/employees?${params.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
       const json = await res.json().catch(() => null);
 
@@ -194,6 +342,66 @@ export default function AdminAttendancePage() {
       setSummary(DEFAULT_SUMMARY);
     } finally {
       setLoadingEmployees(false);
+    }
+  }
+
+  async function loadLogs(options?: {
+    searchValue?: string;
+    branchValue?: string;
+    dateValue?: DateFilter;
+    tokenFromCheck?: string;
+  }) {
+    setLoadingLogs(true);
+    setLogsErrorText("");
+
+    const nextSearch = options?.searchValue ?? logSearch;
+    const nextBranch = options?.branchValue ?? logBranchFilter;
+    const nextDate = options?.dateValue ?? logDateFilter;
+
+    try {
+      const token = options?.tokenFromCheck || (await getAccessToken());
+
+      if (!token) {
+        router.replace("/account/login?next=/admin/attendance");
+        return;
+      }
+
+      const params = new URLSearchParams();
+      params.set("date", nextDate);
+
+      if (nextSearch.trim()) {
+        params.set("search", nextSearch.trim());
+      }
+
+      if (nextBranch.trim()) {
+        params.set("branch", nextBranch.trim());
+      }
+
+      const res = await fetch(`/api/admin/attendance/logs?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to load attendance logs.");
+      }
+
+      setLogs(Array.isArray(json?.logs) ? json.logs : []);
+      setLogsSummary(json?.summary || DEFAULT_LOGS_SUMMARY);
+
+      if (json?.admin) {
+        setAdminUser(json.admin);
+        setAdminEmail(json.admin.email || "");
+      }
+    } catch (error: any) {
+      setLogsErrorText(error?.message || "Failed to load attendance logs.");
+      setLogs([]);
+      setLogsSummary(DEFAULT_LOGS_SUMMARY);
+    } finally {
+      setLoadingLogs(false);
     }
   }
 
@@ -240,7 +448,11 @@ export default function AdminAttendancePage() {
       setForm(DEFAULT_FORM);
       setShowForm(false);
       setSuccessText("Employee created successfully.");
-      await loadEmployees({ tokenFromCheck: token });
+
+      await Promise.all([
+        loadEmployees({ tokenFromCheck: token }),
+        loadLogs({ tokenFromCheck: token }),
+      ]);
     } catch (error: any) {
       setErrorText(error?.message || "Failed to create employee.");
     } finally {
@@ -286,6 +498,34 @@ export default function AdminAttendancePage() {
     });
   }
 
+  function submitLogSearch(nextSearch: string) {
+    const cleanSearch = nextSearch.trim();
+    setLogSearch(cleanSearch);
+    loadLogs({ searchValue: cleanSearch });
+  }
+
+  function changeLogBranch(nextBranch: string) {
+    setLogBranchFilter(nextBranch);
+    loadLogs({ branchValue: nextBranch });
+  }
+
+  function changeLogDate(nextDate: DateFilter) {
+    setLogDateFilter(nextDate);
+    loadLogs({ dateValue: nextDate });
+  }
+
+  function resetLogFilters() {
+    setLogSearch("");
+    setLogBranchFilter("");
+    setLogDateFilter("today");
+
+    loadLogs({
+      searchValue: "",
+      branchValue: "",
+      dateValue: "today",
+    });
+  }
+
   useEffect(() => {
     async function initAdmin() {
       setAuthLoading(true);
@@ -302,9 +542,14 @@ export default function AdminAttendancePage() {
       setAllowed(true);
       setAuthLoading(false);
 
-      await loadEmployees({
-        tokenFromCheck: session.access_token,
-      });
+      await Promise.all([
+        loadEmployees({
+          tokenFromCheck: session.access_token,
+        }),
+        loadLogs({
+          tokenFromCheck: session.access_token,
+        }),
+      ]);
     }
 
     initAdmin();
@@ -339,6 +584,40 @@ export default function AdminAttendancePage() {
       },
     ],
     [summary]
+  );
+
+  const logStats = useMemo(
+    () => [
+      {
+        label: "Total Logs",
+        value: logsSummary.total,
+        icon: CalendarDays,
+        className: "border-neutral-200 bg-white text-neutral-950",
+      },
+      {
+        label: "Open Check-ins",
+        value: logsSummary.open,
+        icon: Clock3,
+        className: "border-amber-200 bg-amber-50 text-amber-700",
+      },
+      {
+        label: "Checked Out",
+        value: logsSummary.checked_out,
+        icon: CheckCircle2,
+        className: "border-green-200 bg-green-50 text-green-700",
+      },
+      {
+        label: "Outside Radius",
+        value: logsSummary.outside_radius,
+        icon: AlertTriangle,
+        className: "border-red-200 bg-red-50 text-red-700",
+      },
+    ],
+    [logsSummary]
+  );
+
+  const allBranches = Array.from(
+    new Set([...summary.branches, ...logsSummary.branches].filter(Boolean))
   );
 
   if (authLoading) {
@@ -391,8 +670,8 @@ export default function AdminAttendancePage() {
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-              Employee master list foundation for branch-wise attendance,
-              geo-location validation and future ERPNext attendance sync.
+              Employee master list, attendance logs, geo-location validation and
+              future ERPNext attendance sync foundation.
             </p>
           </div>
 
@@ -447,14 +726,17 @@ export default function AdminAttendancePage() {
               Add Employee
             </h2>
             <p className="mt-2 text-sm text-neutral-600">
-              ERP Employee ID optional hai. Geo location branch ke exact point ke liay save hogi.
+              ERP Employee ID optional hai. Geo location branch ke exact point
+              ke liay save hogi.
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <input
               value={form.employee_name}
-              onChange={(event) => updateForm("employee_name", event.target.value)}
+              onChange={(event) =>
+                updateForm("employee_name", event.target.value)
+              }
               placeholder="Employee Name *"
               className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#a30105]"
             />
@@ -468,21 +750,27 @@ export default function AdminAttendancePage() {
 
             <input
               value={form.employee_email}
-              onChange={(event) => updateForm("employee_email", event.target.value)}
+              onChange={(event) =>
+                updateForm("employee_email", event.target.value)
+              }
               placeholder="Employee Email"
               className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#a30105]"
             />
 
             <input
               value={form.employee_phone}
-              onChange={(event) => updateForm("employee_phone", event.target.value)}
+              onChange={(event) =>
+                updateForm("employee_phone", event.target.value)
+              }
               placeholder="Employee Phone"
               className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#a30105]"
             />
 
             <input
               value={form.erp_employee_id}
-              onChange={(event) => updateForm("erp_employee_id", event.target.value)}
+              onChange={(event) =>
+                updateForm("erp_employee_id", event.target.value)
+              }
               placeholder="ERPNext Employee ID"
               className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#a30105]"
             />
@@ -496,14 +784,18 @@ export default function AdminAttendancePage() {
 
             <input
               value={form.allowed_latitude}
-              onChange={(event) => updateForm("allowed_latitude", event.target.value)}
+              onChange={(event) =>
+                updateForm("allowed_latitude", event.target.value)
+              }
               placeholder="Allowed Latitude"
               className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#a30105]"
             />
 
             <input
               value={form.allowed_longitude}
-              onChange={(event) => updateForm("allowed_longitude", event.target.value)}
+              onChange={(event) =>
+                updateForm("allowed_longitude", event.target.value)
+              }
               placeholder="Allowed Longitude"
               className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#a30105]"
             />
@@ -573,7 +865,7 @@ export default function AdminAttendancePage() {
             className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-black text-neutral-800 outline-none focus:border-[#a30105]"
           >
             <option value="">All Branches</option>
-            {summary.branches.map((branch) => (
+            {allBranches.map((branch) => (
               <option key={branch} value={branch}>
                 {branch}
               </option>
@@ -667,7 +959,9 @@ export default function AdminAttendancePage() {
                             {employee.employee_name}
                           </div>
                           <div className="mt-1 text-xs font-bold text-neutral-500">
-                            {employee.employee_phone || employee.employee_email || "No contact"}
+                            {employee.employee_phone ||
+                              employee.employee_email ||
+                              "No contact"}
                           </div>
                           <div className="mt-1 text-xs font-bold text-neutral-500">
                             {employee.designation || "No designation"}
@@ -726,6 +1020,279 @@ export default function AdminAttendancePage() {
             </table>
           </div>
         )}
+      </div>
+
+      <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
+              Attendance Logs
+            </p>
+
+            <h2 className="mt-2 text-2xl font-black text-neutral-950">
+              Check-in / Check-out History
+            </h2>
+
+            <p className="mt-2 text-sm leading-6 text-neutral-500">
+              Employee attendance logs with branch, time, geo-distance, radius
+              status and ERP sync status.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => loadLogs()}
+            disabled={loadingLogs}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-5 py-3 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loadingLogs ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Clock3 className="h-4 w-4" />
+            )}
+            Refresh Logs
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {logStats.map((stat) => {
+            const Icon = stat.icon;
+
+            return (
+              <div
+                key={stat.label}
+                className={`rounded-[24px] border p-5 ${stat.className}`}
+              >
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/75">
+                  <Icon className="h-5 w-5" />
+                </div>
+
+                <div className="mt-4 text-xs font-black uppercase tracking-wider opacity-80">
+                  {stat.label}
+                </div>
+
+                <div className="mt-2 text-2xl font-black">{stat.value}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
+          <div className="flex flex-wrap gap-2">
+            {DATE_FILTERS.map((filter) => {
+              const active = logDateFilter === filter.key;
+
+              return (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => changeLogDate(filter.key)}
+                  className={`rounded-full border px-4 py-2 text-xs font-black uppercase transition ${
+                    active
+                      ? "border-[#a30105]/25 bg-[#fff7f7] text-[#a30105]"
+                      : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitLogSearch(logSearch);
+          }}
+          className="mt-4 flex flex-col gap-3 lg:flex-row"
+        >
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <input
+              value={logSearch}
+              onChange={(event) => setLogSearch(event.target.value)}
+              placeholder="Search logs by employee, branch, ERP, status..."
+              className="h-12 w-full rounded-2xl border border-neutral-200 bg-white pl-11 pr-4 text-sm font-medium outline-none transition focus:border-[#a30105]"
+            />
+          </div>
+
+          <select
+            value={logBranchFilter}
+            onChange={(event) => changeLogBranch(event.target.value)}
+            className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-black text-neutral-800 outline-none focus:border-[#a30105]"
+          >
+            <option value="">All Branches</option>
+            {allBranches.map((branch) => (
+              <option key={branch} value={branch}>
+                {branch}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="submit"
+            disabled={loadingLogs}
+            className="h-12 rounded-2xl bg-[#a30105] px-6 text-sm font-black text-white transition hover:bg-[#8f0104] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loadingLogs ? "Loading..." : "Search"}
+          </button>
+
+          <button
+            type="button"
+            disabled={loadingLogs}
+            onClick={resetLogFilters}
+            className="h-12 rounded-2xl border border-neutral-200 bg-white px-6 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Reset
+          </button>
+        </form>
+
+        {logsErrorText ? (
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+            {logsErrorText}
+          </div>
+        ) : null}
+
+        <div className="mt-5">
+          {loadingLogs ? (
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-10 text-center">
+              <Loader2 className="mx-auto h-7 w-7 animate-spin text-[#a30105]" />
+              <p className="mt-3 text-sm font-bold text-neutral-600">
+                Loading attendance logs...
+              </p>
+            </div>
+          ) : logs.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-10 text-center">
+              <h3 className="text-xl font-black text-neutral-950">
+                No Attendance Logs Found
+              </h3>
+              <p className="mt-2 text-sm text-neutral-500">
+                Logs will appear here after employees check in or check out.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1280px] border-separate border-spacing-y-3">
+                <thead>
+                  <tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500">
+                    <th className="px-3 py-2">Employee</th>
+                    <th className="px-3 py-2">Branch / Date</th>
+                    <th className="px-3 py-2">Check In</th>
+                    <th className="px-3 py-2">Check Out</th>
+                    <th className="px-3 py-2">Distance</th>
+                    <th className="px-3 py-2">Radius</th>
+                    <th className="px-3 py-2">ERP Sync</th>
+                    <th className="px-3 py-2">Device / IP</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {logs.map((log) => {
+                    const employee = getEmployeeFromLog(log);
+                    const checkInRadius = log.check_in_within_radius;
+                    const checkOutRadius = log.check_out_within_radius;
+                    const finalRadius =
+                      checkOutRadius !== null && checkOutRadius !== undefined
+                        ? checkOutRadius
+                        : checkInRadius;
+
+                    return (
+                      <tr key={log.id}>
+                        <td className="rounded-l-2xl border-y border-l border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#a30105] shadow-sm">
+                              <UserRound className="h-5 w-5" />
+                            </div>
+
+                            <div>
+                              <div className="font-black text-neutral-950">
+                                {employee?.employee_name || "Employee"}
+                              </div>
+                              <div className="mt-1 text-xs font-bold text-neutral-500">
+                                {employee?.employee_phone ||
+                                  employee?.employee_email ||
+                                  "No contact"}
+                              </div>
+                              <div className="mt-1 text-xs font-bold text-neutral-500">
+                                {employee?.designation || "No designation"}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                          <div className="font-black text-neutral-950">
+                            {log.branch_name || employee?.branch_name || "No branch"}
+                          </div>
+                          <div className="mt-1 text-xs font-bold text-neutral-500">
+                            {formatOnlyDate(log.attendance_date)}
+                          </div>
+                        </td>
+
+                        <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                          <div className="text-sm font-black text-neutral-950">
+                            {formatDate(log.check_in_at)}
+                          </div>
+                        </td>
+
+                        <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                          <div className="text-sm font-black text-neutral-950">
+                            {formatDate(log.check_out_at)}
+                          </div>
+                        </td>
+
+                        <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                          <div className="text-xs font-bold text-neutral-500">
+                            In: {formatDistance(log.check_in_distance_meters)}
+                          </div>
+                          <div className="mt-1 text-xs font-bold text-neutral-500">
+                            Out: {formatDistance(log.check_out_distance_meters)}
+                          </div>
+                        </td>
+
+                        <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                          <span
+                            className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getRadiusClasses(
+                              finalRadius
+                            )}`}
+                          >
+                            {getRadiusText(finalRadius)}
+                          </span>
+                        </td>
+
+                        <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                          <span
+                            className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getErpClasses(
+                              log.erp_sync_status
+                            )}`}
+                          >
+                            {log.erp_sync_status || "pending"}
+                          </span>
+
+                          {log.erp_error ? (
+                            <div className="mt-2 max-w-[260px] text-xs font-bold text-red-600">
+                              {log.erp_error}
+                            </div>
+                          ) : null}
+                        </td>
+
+                        <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                          <div className="max-w-[280px] truncate text-xs font-bold text-neutral-600">
+                            {log.device_info || "No device info"}
+                          </div>
+                          <div className="mt-1 text-xs font-bold text-neutral-500">
+                            IP: {log.ip_address || "Not available"}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
