@@ -195,8 +195,8 @@ export default function AdminShell({ children }: AdminShellProps) {
         label: "Reports",
         href: "/admin/reports",
         icon: BarChart3,
-        badge: userCanViewReports ? "Soon" : "Locked",
-        disabled: true,
+        badge: "Reports",
+        disabled: false,
         hidden: !userCanViewReports,
       },
       {
