@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
+  CalendarCheck,
   ClipboardList,
   Home,
   LayoutDashboard,
@@ -183,6 +184,13 @@ export default function AdminShell({ children }: AdminShellProps) {
         icon: UserRound,
         badge: "CRM",
         hidden: !userCanViewCustomers,
+      },
+      {
+       label: "Attendance",
+       href: "/admin/attendance",
+       icon: CalendarCheck,
+       badge: "HR",
+       hidden: !userCanViewReports,
       },
       {
         label: "Users / Roles",
