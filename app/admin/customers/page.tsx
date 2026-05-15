@@ -733,17 +733,15 @@ export default function AdminCustomersPage() {
                     </td>
 
                     <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
-                      {customer.has_auth_user ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-black uppercase text-green-700">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          Registered
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black uppercase text-blue-700">
-                          <UserRound className="h-3.5 w-3.5" />
-                          Guest
-                        </span>
-                      )}
+                      <Link
+                     href={`/admin/customers/${encodeURIComponent(
+                     customer.customer_key || customer.id
+                   )}`}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#a30105]/20 bg-white px-4 py-2 text-xs font-black uppercase text-[#a30105] transition hover:border-[#a30105] hover:bg-[#fff7f7]"
+                  >
+                  <Eye className="h-3.5 w-3.5" />
+                  View
+                  </Link>
 
                       {!customer.is_active ? (
                         <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-black uppercase text-red-700">
