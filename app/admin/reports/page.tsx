@@ -12,6 +12,7 @@ import {
   Loader2,
   MapPin,
   PackageCheck,
+  Printer,
   ShieldCheck,
   ShoppingBag,
   UsersRound,
@@ -33,6 +34,14 @@ type DateFilter =
   | "last_7_days"
   | "last_30_days"
   | "all_time";
+
+type ReportTab =
+  | "overview"
+  | "status"
+  | "payments"
+  | "cities"
+  | "customers"
+  | "roadmap";
 
 type ReportSummary = {
   total_orders: number;
@@ -87,6 +96,15 @@ const DATE_FILTERS: { key: DateFilter; label: string }[] = [
   { key: "all_time", label: "All Time" },
 ];
 
+const REPORT_TABS: { key: ReportTab; label: string }[] = [
+  { key: "overview", label: "Overview" },
+  { key: "status", label: "Status" },
+  { key: "payments", label: "Payments" },
+  { key: "cities", label: "Cities" },
+  { key: "customers", label: "Customers" },
+  { key: "roadmap", label: "HR Roadmap" },
+];
+
 function formatPKR(value: number | null | undefined) {
   return new Intl.NumberFormat("en-PK").format(Number(value || 0));
 }
@@ -106,6 +124,34 @@ function formatDate(value: string | null | undefined) {
 
 function getDateFilterLabel(filter: DateFilter) {
   return DATE_FILTERS.find((item) => item.key === filter)?.label || "Today";
+}
+
+function isValidDateFilter(value: string | null): value is DateFilter {
+  return DATE_FILTERS.some((filter) => filter.key === value);
+}
+
+function getInitialDateFilter(): DateFilter {
+  if (typeof window === "undefined") return "today";
+
+  const params = new URLSearchParams(window.location.search);
+  const date = String(params.get("date") || "today").trim();
+
+  return isValidDateFilter(date) ? date : "today";
+}
+
+function updateReportsUrl(dateValue: DateFilter) {
+  if (typeof window === "undefined") return;
+
+  const params = new URLSearchParams();
+
+  if (dateValue !== "today") {
+    params.set("date", dateValue);
+  }
+
+  const query = params.toString();
+  const nextUrl = query ? `/admin/reports?${query}` : "/admin/reports";
+
+  window.history.replaceState(null, "", nextUrl);
 }
 
 function getDateFilterButtonClass(active: boolean) {
@@ -174,6 +220,8 @@ export default function AdminReportsPage() {
   const [exportingCsv, setExportingCsv] = useState(false);
   const [errorText, setErrorText] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
+
+  const [activeTab, setActiveTab] = useState<ReportTab>("overview");
 
   const [summary, setSummary] = useState<ReportSummary>(DEFAULT_SUMMARY);
   const [statusBreakdown, setStatusBreakdown] = useState<StatusBreakdown[]>([]);
@@ -307,7 +355,12 @@ export default function AdminReportsPage() {
 
   function changeDateFilter(nextFilter: DateFilter) {
     setDateFilter(nextFilter);
+    updateReportsUrl(nextFilter);
     loadReports({ dateValue: nextFilter });
+  }
+
+  function printReport() {
+    window.print();
   }
 
   useEffect(() => {
@@ -330,8 +383,11 @@ export default function AdminReportsPage() {
       setAllowed(true);
       setAuthLoading(false);
 
+      const initialDateFilter = getInitialDateFilter();
+      setDateFilter(initialDateFilter);
+
       await loadReports({
-        dateValue: "today",
+        dateValue: initialDateFilter,
         tokenFromCheck: session.access_token,
       });
     }
@@ -459,6 +515,15 @@ export default function AdminReportsPage() {
 
             <button
               type="button"
+              onClick={printReport}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-5 py-3 text-sm font-black text-neutral-900 transition hover:bg-neutral-50"
+            >
+              <Printer className="h-4 w-4" />
+              Print
+            </button>
+
+            <button
+              type="button"
               onClick={() => loadReports()}
               disabled={loadingReports}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-5 py-3 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -523,6 +588,7 @@ export default function AdminReportsPage() {
         ) : null}
       </div>
 
+      {activeTab === "overview" ? (
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => {
           const Icon = card.icon;
@@ -551,8 +617,11 @@ export default function AdminReportsPage() {
         })}
       </div>
 
+      ) : null}
+
+      {(activeTab === "overview" || activeTab === "status" || activeTab === "payments") ? (
       <div className="grid gap-6 xl:grid-cols-2">
-        <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+        <div className={`${activeTab === "payments" ? "hidden" : ""} rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]`}>
           <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
             Status
           </p>
@@ -610,7 +679,7 @@ export default function AdminReportsPage() {
           </div>
         </div>
 
-        <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+        <div className={`${activeTab === "status" ? "hidden" : ""} rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]`}>
           <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
             Payments
           </p>
@@ -653,8 +722,11 @@ export default function AdminReportsPage() {
         </div>
       </div>
 
+      ) : null}
+
+      {(activeTab === "overview" || activeTab === "cities" || activeTab === "customers") ? (
       <div className="grid gap-6 xl:grid-cols-2">
-        <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+        <div className={`${activeTab === "customers" ? "hidden" : ""} rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]`}>
           <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
             Locations
           </p>
@@ -698,7 +770,7 @@ export default function AdminReportsPage() {
           </div>
         </div>
 
-        <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+        <div className={`${activeTab === "cities" ? "hidden" : ""} rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]`}>
           <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
             Customers
           </p>
@@ -748,6 +820,9 @@ export default function AdminReportsPage() {
         </div>
       </div>
 
+      ) : null}
+
+      {(activeTab === "overview" || activeTab === "roadmap") ? (
       <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
         <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
           Roadmap
@@ -773,6 +848,7 @@ export default function AdminReportsPage() {
           </div>
         </div>
       </div>
+      ) : null}
     </div>
   );
 }
