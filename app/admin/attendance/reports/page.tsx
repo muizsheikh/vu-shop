@@ -42,6 +42,24 @@ type AdminUser = {
   is_active: boolean;
 };
 
+type EmployeeMasterRow = {
+  id: string;
+  user_id: string | null;
+  erp_employee_id: string | null;
+  employee_name: string;
+  employee_email: string | null;
+  employee_phone: string | null;
+  branch_name: string;
+  designation: string | null;
+  allowed_latitude: number | null;
+  allowed_longitude: number | null;
+  allowed_radius_meters: number | null;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type AttendanceEmployee = {
   id: string;
   employee_name: string | null;
@@ -120,6 +138,23 @@ type BranchReportRow = {
   open: number;
   outside_radius: number;
   shifted_branch: number;
+};
+
+type AttendanceStatusRow = {
+  employee_id: string;
+  employee_name: string;
+  employee_phone: string;
+  employee_email: string;
+  designation: string;
+  home_branch: string;
+  status: "Absent" | "Present" | "Open" | "Complete";
+  check_in_at: string;
+  check_out_at: string;
+  detected_branch: string;
+  outside_radius: boolean;
+  shifted_branch: boolean;
+  has_check_in_photo: boolean;
+  has_check_out_photo: boolean;
 };
 
 const DATE_FILTERS: { key: DateFilter; label: string; helper: string }[] = [
@@ -233,6 +268,8 @@ export default function AttendanceReportsPage() {
   const [logs, setLogs] = useState<AttendanceLog[]>([]);
   const [logsSummary, setLogsSummary] = useState<LogsSummaryState>(DEFAULT_LOGS_SUMMARY);
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const [activeEmployees, setActiveEmployees] = useState<EmployeeMasterRow[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [dateFilter, setDateFilter] = useState<DateFilter>("last_30_days");
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
@@ -265,6 +302,53 @@ export default function AttendanceReportsPage() {
 
   function closePhotoPreview() {
     setPhotoPreview(null);
+  }
+
+  async function loadEmployees(options?: {
+    searchValue?: string;
+    branchValue?: string;
+    tokenFromCheck?: string;
+  }) {
+    setLoadingEmployees(true);
+
+    const nextSearch = options?.searchValue ?? search;
+    const nextBranch = options?.branchValue ?? branchFilter;
+
+    try {
+      const token = options?.tokenFromCheck || (await getAccessToken());
+
+      if (!token) {
+        router.replace("/account/login?next=/admin/attendance/reports");
+        return;
+      }
+
+      const params = new URLSearchParams();
+      params.set("active", "active");
+      if (nextSearch.trim()) params.set("search", nextSearch.trim());
+      if (nextBranch.trim()) params.set("branch", nextBranch.trim());
+
+      const res = await fetch(`/api/admin/attendance/employees?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to load active employees.");
+      }
+
+      setActiveEmployees(Array.isArray(json?.employees) ? json.employees : []);
+
+      if (json?.admin) {
+        setAdminUser(json.admin);
+        setAdminEmail(json.admin.email || "");
+      }
+    } catch (error: any) {
+      setErrorText(error?.message || "Failed to load active employees.");
+      setActiveEmployees([]);
+    } finally {
+      setLoadingEmployees(false);
+    }
   }
 
   async function loadReports(options?: {
@@ -330,12 +414,14 @@ export default function AttendanceReportsPage() {
   function changeBranch(nextBranch: string) {
     setBranchFilter(nextBranch);
     loadReports({ branchValue: nextBranch });
+    loadEmployees({ branchValue: nextBranch });
   }
 
   function submitSearch(nextSearch: string) {
     const cleanSearch = nextSearch.trim();
     setSearch(cleanSearch);
     loadReports({ searchValue: cleanSearch });
+    loadEmployees({ searchValue: cleanSearch });
   }
 
   function resetFilters() {
@@ -343,6 +429,7 @@ export default function AttendanceReportsPage() {
     setBranchFilter("");
     setDateFilter("last_30_days");
     loadReports({ searchValue: "", branchValue: "", dateValue: "last_30_days" });
+    loadEmployees({ searchValue: "", branchValue: "" });
   }
 
   useEffect(() => {
@@ -361,7 +448,10 @@ export default function AttendanceReportsPage() {
       setAllowed(true);
       setAuthLoading(false);
 
-      await loadReports({ tokenFromCheck: session.access_token });
+      await Promise.all([
+        loadReports({ tokenFromCheck: session.access_token }),
+        loadEmployees({ tokenFromCheck: session.access_token }),
+      ]);
     }
 
     initReports();
@@ -375,12 +465,65 @@ export default function AttendanceReportsPage() {
           ...logsSummary.branches,
           ...logs.map((log) => getDetectedBranch(log)),
           ...logs.map((log) => getEmployeeFromLog(log)?.branch_name || ""),
+          ...activeEmployees.map((employee) => employee.branch_name || ""),
         ]
           .map((value) => String(value || "").trim())
           .filter(Boolean)
       )
     ).sort((a, b) => a.localeCompare(b));
-  }, [logs, logsSummary.branches]);
+  }, [activeEmployees, logs, logsSummary.branches]);
+
+  const attendanceStatusRows = useMemo<AttendanceStatusRow[]>(() => {
+    const logsByEmployee = new Map<string, AttendanceLog[]>();
+
+    logs.forEach((log) => {
+      const existing = logsByEmployee.get(log.employee_id) || [];
+      existing.push(log);
+      logsByEmployee.set(log.employee_id, existing);
+    });
+
+    return activeEmployees
+      .map((employee) => {
+        const employeeLogs = logsByEmployee.get(employee.id) || [];
+        const latestLog = employeeLogs[0] || null;
+        const completeLog = employeeLogs.find((log) => Boolean(log.check_in_at && log.check_out_at));
+        const openLog = employeeLogs.find((log) => Boolean(log.check_in_at && !log.check_out_at));
+        const status: AttendanceStatusRow["status"] = !latestLog
+          ? "Absent"
+          : openLog
+          ? "Open"
+          : completeLog
+          ? "Complete"
+          : "Present";
+        const sourceLog = openLog || completeLog || latestLog;
+
+        return {
+          employee_id: employee.id,
+          employee_name: employee.employee_name || "Employee",
+          employee_phone: employee.employee_phone || "",
+          employee_email: employee.employee_email || "",
+          designation: employee.designation || "",
+          home_branch: employee.branch_name || "No branch",
+          status,
+          check_in_at: sourceLog?.check_in_at || "",
+          check_out_at: sourceLog?.check_out_at || "",
+          detected_branch: sourceLog ? getDetectedBranch(sourceLog) : "",
+          outside_radius: sourceLog ? isOutsideRadius(sourceLog) : false,
+          shifted_branch: sourceLog ? isShiftedBranch(sourceLog) : false,
+          has_check_in_photo: Boolean(sourceLog?.check_in_photo_url),
+          has_check_out_photo: Boolean(sourceLog?.check_out_photo_url),
+        };
+      })
+      .sort((a, b) => {
+        const order = { Open: 0, Absent: 1, Present: 2, Complete: 3 };
+        return order[a.status] - order[b.status] || a.employee_name.localeCompare(b.employee_name);
+      });
+  }, [activeEmployees, logs]);
+
+  const absentRows = useMemo(
+    () => attendanceStatusRows.filter((row) => row.status === "Absent"),
+    [attendanceStatusRows]
+  );
 
   const employeeRows = useMemo<EmployeeReportRow[]>(() => {
     const map = new Map<string, EmployeeReportRow>();
@@ -459,29 +602,34 @@ export default function AttendanceReportsPage() {
   }, [logs]);
 
   const reportStats = useMemo(() => {
-    const uniqueEmployees = new Set(logs.map((log) => log.employee_id)).size;
+    const presentEmployees = attendanceStatusRows.filter((row) => row.status !== "Absent").length;
     const shiftedBranch = logs.filter((log) => isShiftedBranch(log)).length;
     const missingCheckout = logs.filter((log) => Boolean(log.check_in_at) && !log.check_out_at).length;
-    const photoComplete = logs.filter((log) => Boolean(log.check_in_photo_url) && Boolean(log.check_out_photo_url)).length;
 
     return [
       {
-        label: "Total Logs",
-        value: logsSummary.total,
-        icon: CalendarDays,
+        label: "Active Employees",
+        value: activeEmployees.length,
+        icon: UsersRound,
         className: "border-neutral-200 bg-white text-neutral-950",
       },
       {
-        label: "Employees Present",
-        value: uniqueEmployees,
-        icon: UsersRound,
-        className: "border-blue-200 bg-blue-50 text-blue-700",
+        label: "Present Employees",
+        value: presentEmployees,
+        icon: CheckCircle2,
+        className: "border-green-200 bg-green-50 text-green-700",
+      },
+      {
+        label: "Absent Employees",
+        value: absentRows.length,
+        icon: X,
+        className: "border-red-200 bg-red-50 text-red-700",
       },
       {
         label: "Complete Days",
         value: logsSummary.checked_out,
-        icon: CheckCircle2,
-        className: "border-green-200 bg-green-50 text-green-700",
+        icon: CalendarDays,
+        className: "border-blue-200 bg-blue-50 text-blue-700",
       },
       {
         label: "Open / Missing Checkout",
@@ -502,19 +650,13 @@ export default function AttendanceReportsPage() {
         className: "border-purple-200 bg-purple-50 text-purple-700",
       },
       {
-        label: "Photo Complete",
-        value: photoComplete,
-        icon: ShieldCheck,
-        className: "border-[#a30105]/20 bg-[#fff7f7] text-[#a30105]",
-      },
-      {
         label: "Branches",
         value: branchRows.length,
         icon: BarChart3,
         className: "border-neutral-200 bg-white text-neutral-950",
       },
     ];
-  }, [branchRows.length, logs, logsSummary]);
+  }, [absentRows.length, activeEmployees.length, attendanceStatusRows, branchRows.length, logs, logsSummary]);
 
   function exportEmployeeCsv() {
     const header = [
@@ -551,6 +693,43 @@ export default function AttendanceReportsPage() {
 
     const csv = [header, ...rows].map((row) => row.map(csvSafe).join(",")).join("\n");
     downloadTextFile(`attendance-employee-report-${dateFilter}.csv`, csv);
+  }
+
+  function exportStatusCsv() {
+    const header = [
+      "Employee Name",
+      "Phone",
+      "Email",
+      "Designation",
+      "Home Branch",
+      "Status",
+      "Check In",
+      "Check Out",
+      "Detected Branch",
+      "Outside Radius",
+      "Shifted Branch",
+      "Check-in Photo",
+      "Check-out Photo",
+    ];
+
+    const rows = attendanceStatusRows.map((row) => [
+      row.employee_name,
+      row.employee_phone,
+      row.employee_email,
+      row.designation,
+      row.home_branch,
+      row.status,
+      row.check_in_at,
+      row.check_out_at,
+      row.detected_branch,
+      row.outside_radius ? "Yes" : "No",
+      row.shifted_branch ? "Yes" : "No",
+      row.has_check_in_photo ? "Yes" : "No",
+      row.has_check_out_photo ? "Yes" : "No",
+    ]);
+
+    const csv = [header, ...rows].map((row) => row.map(csvSafe).join(",")).join("\n");
+    downloadTextFile(`attendance-status-report-${dateFilter}.csv`, csv);
   }
 
   function exportRawCsv() {
@@ -640,9 +819,19 @@ export default function AttendanceReportsPage() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
+              onClick={exportStatusCsv}
+              disabled={attendanceStatusRows.length === 0}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-black text-white transition hover:bg-[#8f0104] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Download className="h-4 w-4" />
+              Export Status CSV
+            </button>
+
+            <button
+              type="button"
               onClick={exportEmployeeCsv}
               disabled={employeeRows.length === 0}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-black text-white transition hover:bg-[#8f0104] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-5 py-3 text-sm font-black text-neutral-900 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Download className="h-4 w-4" />
               Export Employee CSV
@@ -771,7 +960,102 @@ export default function AttendanceReportsPage() {
         ) : null}
 
         <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-bold text-green-700">
-          Report loaded for: {DATE_FILTERS.find((filter) => filter.key === dateFilter)?.label || dateFilter} • Admin: {adminEmail || "Admin"}
+          Report loaded for: {DATE_FILTERS.find((filter) => filter.key === dateFilter)?.label || dateFilter} • Active employees: {activeEmployees.length} • Admin: {adminEmail || "Admin"}
+        </div>
+      </div>
+
+      <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">Present / Absent</p>
+            <h2 className="mt-2 text-2xl font-black text-neutral-950">Employee Status Report</h2>
+            <p className="mt-2 text-sm leading-6 text-neutral-500">Active employees ke mutabiq selected date/range me Present, Absent, Open aur Complete status.</p>
+          </div>
+          <div className="text-sm font-bold text-neutral-500">Rows: {attendanceStatusRows.length}</div>
+        </div>
+
+        <div className="mt-5">
+          {loadingLogs || loadingEmployees ? (
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-10 text-center">
+              <Loader2 className="mx-auto h-7 w-7 animate-spin text-[#a30105]" />
+              <p className="mt-3 text-sm font-bold text-neutral-600">Loading attendance status...</p>
+            </div>
+          ) : attendanceStatusRows.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-10 text-center">
+              <h3 className="text-xl font-black text-neutral-950">No Active Employees Found</h3>
+              <p className="mt-2 text-sm text-neutral-500">Active employees list empty hai ya current filters se koi employee match nahi ho raha.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1250px] border-separate border-spacing-y-3">
+                <thead>
+                  <tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500">
+                    <th className="px-3 py-2">Employee</th>
+                    <th className="px-3 py-2">Home Branch</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Check In</th>
+                    <th className="px-3 py-2">Check Out</th>
+                    <th className="px-3 py-2">Detected Branch</th>
+                    <th className="px-3 py-2">Flags</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attendanceStatusRows.map((row) => (
+                    <tr key={row.employee_id}>
+                      <td className="rounded-l-2xl border-y border-l border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#a30105] shadow-sm">
+                            <UserRound className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <div className="font-black text-neutral-950">{row.employee_name}</div>
+                            <div className="mt-1 text-xs font-bold text-neutral-500">{row.employee_phone || row.employee_email || "No contact"}</div>
+                            <div className="mt-1 text-xs font-bold text-neutral-500">{row.designation || "No designation"}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <div className="font-black text-neutral-950">{row.home_branch || "No branch"}</div>
+                      </td>
+                      <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${
+                            row.status === "Absent"
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : row.status === "Open"
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
+                              : row.status === "Complete"
+                              ? "border-green-200 bg-green-50 text-green-700"
+                              : "border-blue-200 bg-blue-50 text-blue-700"
+                          }`}
+                        >
+                          {row.status}
+                        </span>
+                      </td>
+                      <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <div className="text-sm font-bold text-neutral-700">{formatDate(row.check_in_at)}</div>
+                      </td>
+                      <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <div className="text-sm font-bold text-neutral-700">{formatDate(row.check_out_at)}</div>
+                      </td>
+                      <td className="border-y border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <div className="font-black text-neutral-950">{row.detected_branch || "No log"}</div>
+                      </td>
+                      <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-neutral-50 px-3 py-4 align-top">
+                        <div className="flex flex-wrap gap-2">
+                          {row.outside_radius ? <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[10px] font-black uppercase text-red-700">Outside</span> : null}
+                          {row.shifted_branch ? <span className="rounded-full border border-purple-200 bg-purple-50 px-3 py-1 text-[10px] font-black uppercase text-purple-700">Shifted</span> : null}
+                          {row.status !== "Absent" && !row.has_check_in_photo ? <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase text-amber-700">No In Photo</span> : null}
+                          {row.status === "Complete" && !row.has_check_out_photo ? <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase text-amber-700">No Out Photo</span> : null}
+                          {!row.outside_radius && !row.shifted_branch && (row.status === "Absent" || row.has_check_in_photo) ? <span className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-[10px] font-black uppercase text-neutral-600">Clear</span> : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 
