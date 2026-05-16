@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { useCartStore } from "@/store/cart";
 import { supabase } from "@/lib/supabaseClient";
 
-const DELIVERY_CHARGE = 200;
+const DEFAULT_DELIVERY_CHARGE = 200;
 
 const MAX_CUSTOMER_NOTE_LENGTH = 500;
 
@@ -39,6 +39,18 @@ type Profile = {
   phone: string | null;
   city: string | null;
   address_line1: string | null;
+};
+
+type CheckoutSettings = {
+  delivery_charge: number;
+  minimum_order_amount: number;
+  cod_enabled: boolean;
+};
+
+const DEFAULT_CHECKOUT_SETTINGS: CheckoutSettings = {
+  delivery_charge: DEFAULT_DELIVERY_CHARGE,
+  minimum_order_amount: 0,
+  cod_enabled: true,
 };
 
 function formatPKR(value: number) {
@@ -77,12 +89,63 @@ function isValidPkPhone(value: string) {
   return /^03\d{9}$/.test(v) || /^\+923\d{9}$/.test(v);
 }
 
+function cleanMoneyValue(value: unknown, fallback: number) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number) || number < 0) {
+    return fallback;
+  }
+
+  return Math.round(number);
+}
+
+function cleanBooleanValue(value: unknown, fallback: boolean) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const clean = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(clean)) return true;
+    if (["false", "0", "no", "off"].includes(clean)) return false;
+  }
+  return fallback;
+}
+
+async function loadCheckoutSettings(): Promise<CheckoutSettings> {
+  try {
+    const res = await fetch("/api/settings", { cache: "no-store" });
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok || !json) {
+      return DEFAULT_CHECKOUT_SETTINGS;
+    }
+
+    const source = json.settings || json;
+
+    return {
+      delivery_charge: cleanMoneyValue(
+        source.delivery_charge,
+        DEFAULT_CHECKOUT_SETTINGS.delivery_charge
+      ),
+      minimum_order_amount: cleanMoneyValue(
+        source.minimum_order_amount,
+        DEFAULT_CHECKOUT_SETTINGS.minimum_order_amount
+      ),
+      cod_enabled: cleanBooleanValue(
+        source.cod_enabled,
+        DEFAULT_CHECKOUT_SETTINGS.cod_enabled
+      ),
+    };
+  } catch {
+    return DEFAULT_CHECKOUT_SETTINGS;
+  }
+}
+
 export default function CheckoutClient() {
   const router = useRouter();
   const { items, total, clear } = useCartStore();
 
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [settings, setSettings] = useState<CheckoutSettings>(DEFAULT_CHECKOUT_SETTINGS);
 
   const [userId, setUserId] = useState("");
   const [name, setName] = useState("");
@@ -97,8 +160,13 @@ export default function CheckoutClient() {
   const cartEmpty = items.length === 0;
 
   const subtotalValue = useMemo(() => Number(total() || 0), [total]);
-  const deliveryAmount = cartEmpty ? 0 : DELIVERY_CHARGE;
+  const deliveryCharge = settings.delivery_charge;
+  const minimumOrderAmount = settings.minimum_order_amount;
+  const codEnabled = settings.cod_enabled;
+  const deliveryAmount = cartEmpty ? 0 : deliveryCharge;
   const grandTotalValue = subtotalValue + deliveryAmount;
+  const belowMinimumOrder =
+    !cartEmpty && minimumOrderAmount > 0 && subtotalValue < minimumOrderAmount;
 
   const subtotalPKR = useMemo(
     () => formatPKR(subtotalValue),
@@ -119,6 +187,9 @@ export default function CheckoutClient() {
   useEffect(() => {
     async function loadCustomerProfile() {
       setCheckingAuth(true);
+
+      const checkoutSettings = await loadCheckoutSettings();
+      setSettings(checkoutSettings);
 
       const { data: userData } = await supabase.auth.getUser();
       const user = userData.user;
@@ -155,6 +226,18 @@ export default function CheckoutClient() {
 
     if (cartEmpty) {
       toast.error("Cart is empty");
+      return false;
+    }
+
+    if (!codEnabled) {
+      toast.error("Cash on Delivery is currently unavailable.");
+      return false;
+    }
+
+    if (belowMinimumOrder) {
+      toast.error(
+        `Minimum order amount is Rs ${formatPKR(minimumOrderAmount)}.`
+      );
       return false;
     }
 
@@ -228,7 +311,7 @@ export default function CheckoutClient() {
           city: city.trim(),
           country: "Pakistan",
         },
-        delivery_charge: DELIVERY_CHARGE,
+        delivery_charge: deliveryCharge,
         customer_note: cleanCustomerNote,
       };
 
@@ -431,12 +514,18 @@ export default function CheckoutClient() {
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-2xl border border-red-200 bg-white p-4 shadow-sm">
+                <div
+                  className={`rounded-2xl border bg-white p-4 shadow-sm ${
+                    codEnabled ? "border-red-200" : "border-neutral-200 opacity-70"
+                  }`}
+                >
                   <div className="text-sm font-semibold text-neutral-900">
                     Cash on Delivery
                   </div>
                   <div className="mt-1 text-sm text-neutral-600">
-                    Active now. Pay when your order arrives.
+                    {codEnabled
+                      ? "Active now. Pay when your order arrives."
+                      : "Currently unavailable. Please contact support."}
                   </div>
                 </div>
 
@@ -668,9 +757,20 @@ export default function CheckoutClient() {
                   </div>
                 </div>
 
+                {!codEnabled ? (
+                  <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+                    Cash on Delivery is currently unavailable. Please contact support for assistance.
+                  </div>
+                ) : belowMinimumOrder ? (
+                  <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+                    Minimum order amount is Rs {formatPKR(minimumOrderAmount)}.
+                    Please add Rs {formatPKR(minimumOrderAmount - subtotalValue)} more to continue.
+                  </div>
+                ) : null}
+
                 <button
                   onClick={handleCOD}
-                  disabled={loading || cartEmpty}
+                  disabled={loading || cartEmpty || !codEnabled || belowMinimumOrder}
                   className="mt-5 inline-flex min-h-[54px] w-full items-center justify-center gap-3 rounded-2xl border border-[#a30105]/15 bg-white px-6 py-3 text-base font-semibold text-neutral-900 shadow-[0_10px_30px_rgba(0,0,0,0.05)] transition hover:border-[#a30105]/25 hover:bg-[#fff7f7] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#a30105]/10 text-[#a30105]">
@@ -683,6 +783,10 @@ export default function CheckoutClient() {
                   <span>
                     {loading
                       ? "Placing your order..."
+                      : !codEnabled
+                      ? "Cash on Delivery Unavailable"
+                      : belowMinimumOrder
+                      ? "Minimum Order Required"
                       : "Place Cash on Delivery Order"}
                   </span>
                 </button>
