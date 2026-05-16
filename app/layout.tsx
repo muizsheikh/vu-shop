@@ -6,6 +6,7 @@ import Shortcuts from "@/components/Shortcuts";
 import AgeVerificationModal from "@/components/AgeVerificationModal";
 import { Toaster } from "sonner";
 import MobileBottomNav from "@/components/MobileBottomNav";
+import PwaRegister from "@/components/PwaRegister";
 
 const SITE_URL = "https://vapeustad.com";
 const SITE_NAME = "Vape Ustad";
@@ -16,6 +17,7 @@ const OG_IMAGE = "/og.png";
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   applicationName: SITE_NAME,
+  manifest: "/manifest.json",
   title: {
     default: "Vape Ustad | Premium Vape Store in Pakistan",
     template: `%s | ${SITE_NAME}`,
@@ -63,16 +65,36 @@ export const metadata: Metadata = {
     follow: true,
   },
   icons: {
-    icon: "/favicon.ico",
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
     shortcut: "/favicon.ico",
-    apple: "/favicon.ico",
+    apple: [
+      {
+        url: "/icons/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  },
+  appleWebApp: {
+    capable: true,
+    title: SITE_NAME,
+    statusBarStyle: "default",
+  },
+  formatDetection: {
+    telephone: false,
   },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
   themeColor: "#fefefe",
+  colorScheme: "light",
 };
 
 export default function RootLayout({
@@ -84,6 +106,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className="light">
       <body className="bg-[#fefefe] text-black">
         <Providers>
+          <PwaRegister />
           <AgeVerificationModal />
           <Navbar />
           <main className="mx-auto max-w-[1200px] bg-[#fefefe] px-4 pb-24 pt-8 text-black md:pb-8">
