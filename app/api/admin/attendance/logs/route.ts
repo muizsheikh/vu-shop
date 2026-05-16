@@ -209,6 +209,63 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const branchReportMap = new Map<string, any>();
+
+    for (const log of logs as any[]) {
+      const employee = Array.isArray(log.admin_employees)
+        ? log.admin_employees[0] || {}
+        : log.admin_employees || {};
+
+      const branchName = String(
+        log.detected_branch_name ||
+          log.branch_name ||
+          employee.branch_name ||
+          "No Branch"
+      ).trim();
+
+      const key = branchName || "No Branch";
+
+      if (!branchReportMap.has(key)) {
+        branchReportMap.set(key, {
+          branch_name: key,
+          total: 0,
+          checked_in: 0,
+          checked_out: 0,
+          open: 0,
+          outside_radius: 0,
+          erp_pending: 0,
+          erp_synced: 0,
+          with_check_in_photo: 0,
+          with_check_out_photo: 0,
+        });
+      }
+
+      const row = branchReportMap.get(key);
+
+      row.total += 1;
+      if (log.check_in_at) row.checked_in += 1;
+      if (log.check_out_at) row.checked_out += 1;
+      if (log.check_in_at && !log.check_out_at) row.open += 1;
+
+      if (
+        log.branch_within_radius === false ||
+        log.check_in_within_radius === false ||
+        log.check_out_within_radius === false
+      ) {
+        row.outside_radius += 1;
+      }
+
+      if (log.erp_sync_status === "pending") row.erp_pending += 1;
+      if (log.erp_sync_status === "synced") row.erp_synced += 1;
+      if (log.check_in_photo_url) row.with_check_in_photo += 1;
+      if (log.check_out_photo_url) row.with_check_out_photo += 1;
+    }
+
+    const branchReports = Array.from(branchReportMap.values()).sort((a, b) => {
+      if (b.total !== a.total) return b.total - a.total;
+      return String(a.branch_name).localeCompare(String(b.branch_name));
+    });
+
     const summary = {
       total: logs.length,
       checked_in: logs.filter((log: any) => Boolean(log.check_in_at)).length,
@@ -226,7 +283,13 @@ export async function GET(req: NextRequest) {
       branches: Array.from(
         new Set(
           logs
-            .map((log: any) => log.detected_branch_name || log.branch_name)
+            .map((log: any) => {
+              const employee = Array.isArray(log.admin_employees)
+                ? log.admin_employees[0] || {}
+                : log.admin_employees || {};
+
+              return log.detected_branch_name || log.branch_name || employee.branch_name;
+            })
             .filter(Boolean)
         )
       ),
@@ -234,6 +297,7 @@ export async function GET(req: NextRequest) {
         .length,
       with_check_out_photo: logs.filter((log: any) => Boolean(log.check_out_photo_url))
         .length,
+      branch_reports: branchReports,
     };
 
     return jsonResponse({

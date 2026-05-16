@@ -135,6 +135,19 @@ type BranchSummary = {
   missing_location: number;
 };
 
+type BranchReportRow = {
+  branch_name: string;
+  total: number;
+  checked_in: number;
+  checked_out: number;
+  open: number;
+  outside_radius: number;
+  erp_pending: number;
+  erp_synced: number;
+  with_check_in_photo: number;
+  with_check_out_photo: number;
+};
+
 type LogsSummaryState = {
   total: number;
   checked_in: number;
@@ -144,6 +157,9 @@ type LogsSummaryState = {
   erp_pending: number;
   erp_synced: number;
   branches: string[];
+  with_check_in_photo: number;
+  with_check_out_photo: number;
+  branch_reports: BranchReportRow[];
 };
 
 type EmployeeForm = {
@@ -210,6 +226,9 @@ const DEFAULT_LOGS_SUMMARY: LogsSummaryState = {
   erp_pending: 0,
   erp_synced: 0,
   branches: [],
+  with_check_in_photo: 0,
+  with_check_out_photo: 0,
+  branch_reports: [],
 };
 
 const DEFAULT_FORM: EmployeeForm = {
@@ -1143,6 +1162,11 @@ export default function AdminAttendancePage() {
     [logsSummary]
   );
 
+  const branchReportRows = useMemo(
+    () => logsSummary.branch_reports || [],
+    [logsSummary.branch_reports]
+  );
+
   const allBranches = Array.from(
     new Set([
       ...summary.branches,
@@ -1806,6 +1830,109 @@ export default function AdminAttendancePage() {
 
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {logStats.map((stat) => { const Icon = stat.icon; return <div key={stat.label} className={`rounded-[24px] border p-5 ${stat.className}`}><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/75"><Icon className="h-5 w-5" /></div><div className="mt-4 text-xs font-black uppercase tracking-wider opacity-80">{stat.label}</div><div className="mt-2 text-2xl font-black">{stat.value}</div></div>; })}
+        </div>
+
+        <div className="mt-6 rounded-[28px] border border-neutral-200 bg-neutral-50 p-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-[#a30105]">
+                Branch-wise Report
+              </p>
+              <h3 className="mt-2 text-2xl font-black text-neutral-950">
+                Attendance Summary by Branch
+              </h3>
+              <p className="mt-2 text-sm font-bold leading-6 text-neutral-500">
+                Current filter ke mutabiq branch-wise total, checked out, open check-ins, outside radius and ERP sync health.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-[#a30105]/20 bg-white px-4 py-3 text-xs font-black uppercase text-[#a30105]">
+              {logDateFilter.replaceAll("_", " ")}
+            </div>
+          </div>
+
+          {branchReportRows.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-neutral-300 bg-white p-6 text-center">
+              <h4 className="text-lg font-black text-neutral-950">No Branch Report Yet</h4>
+              <p className="mt-2 text-sm font-bold text-neutral-500">
+                Is filter me attendance logs milte hi branch report yahan show hogi.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-5 overflow-x-auto">
+              <table className="w-full min-w-[980px] border-separate border-spacing-y-3">
+                <thead>
+                  <tr className="text-left text-xs font-black uppercase tracking-wider text-neutral-500">
+                    <th className="px-3 py-2">Branch</th>
+                    <th className="px-3 py-2">Total</th>
+                    <th className="px-3 py-2">Checked In</th>
+                    <th className="px-3 py-2">Checked Out</th>
+                    <th className="px-3 py-2">Open</th>
+                    <th className="px-3 py-2">Outside Radius</th>
+                    <th className="px-3 py-2">ERP</th>
+                    <th className="px-3 py-2">Photos</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {branchReportRows.map((row) => {
+                    const completionRate = row.total > 0 ? Math.round((row.checked_out / row.total) * 100) : 0;
+                    const photoRate =
+                      row.total > 0
+                        ? Math.round(((row.with_check_in_photo + row.with_check_out_photo) / (row.total * 2)) * 100)
+                        : 0;
+
+                    return (
+                      <tr key={row.branch_name}>
+                        <td className="rounded-l-2xl border-y border-l border-neutral-200 bg-white px-3 py-4 align-top">
+                          <div className="font-black text-neutral-950">{row.branch_name}</div>
+                          <div className="mt-1 text-xs font-bold text-neutral-500">
+                            Completion: {completionRate}%
+                          </div>
+                        </td>
+                        <td className="border-y border-neutral-200 bg-white px-3 py-4 align-top">
+                          <div className="text-2xl font-black text-neutral-950">{row.total}</div>
+                        </td>
+                        <td className="border-y border-neutral-200 bg-white px-3 py-4 align-top">
+                          <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black uppercase text-blue-700">
+                            {row.checked_in}
+                          </span>
+                        </td>
+                        <td className="border-y border-neutral-200 bg-white px-3 py-4 align-top">
+                          <span className="inline-flex rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-black uppercase text-green-700">
+                            {row.checked_out}
+                          </span>
+                        </td>
+                        <td className="border-y border-neutral-200 bg-white px-3 py-4 align-top">
+                          <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black uppercase text-amber-700">
+                            {row.open}
+                          </span>
+                        </td>
+                        <td className="border-y border-neutral-200 bg-white px-3 py-4 align-top">
+                          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${
+                            row.outside_radius > 0
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : "border-green-200 bg-green-50 text-green-700"
+                          }`}>
+                            {row.outside_radius}
+                          </span>
+                        </td>
+                        <td className="border-y border-neutral-200 bg-white px-3 py-4 align-top">
+                          <div className="text-xs font-black uppercase text-amber-700">Pending: {row.erp_pending}</div>
+                          <div className="mt-1 text-xs font-black uppercase text-green-700">Synced: {row.erp_synced}</div>
+                        </td>
+                        <td className="rounded-r-2xl border-y border-r border-neutral-200 bg-white px-3 py-4 align-top">
+                          <div className="text-xs font-black uppercase text-neutral-700">
+                            In: {row.with_check_in_photo} / Out: {row.with_check_out_photo}
+                          </div>
+                          <div className="mt-1 text-xs font-bold text-neutral-500">Photo coverage: {photoRate}%</div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-3"><div className="flex flex-wrap gap-2">{DATE_FILTERS.map((filter) => { const active = logDateFilter === filter.key; return <button key={filter.key} type="button" onClick={() => changeLogDate(filter.key)} className={`rounded-full border px-4 py-2 text-xs font-black uppercase transition ${active ? "border-[#a30105]/25 bg-[#fff7f7] text-[#a30105]" : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"}`}>{filter.label}</button>; })}</div></div>
