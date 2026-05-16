@@ -10,7 +10,6 @@ function isInternalAsset(pathname: string) {
     pathname.startsWith("/images") ||
     pathname.startsWith("/assets") ||
     pathname.startsWith("/favicon") ||
-    pathname.startsWith("/manifest") ||
     pathname.startsWith("/sw.js") ||
     pathname.startsWith("/offline.html") ||
     pathname.includes(".")
@@ -23,6 +22,12 @@ export function middleware(req: NextRequest) {
 
   if (host !== ATTENDANCE_HOST) {
     return NextResponse.next();
+  }
+
+  if (pathname === "/manifest.json") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/attendance-manifest.json";
+    return NextResponse.rewrite(url);
   }
 
   if (isInternalAsset(pathname)) {
