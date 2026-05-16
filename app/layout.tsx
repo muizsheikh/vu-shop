@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import "@/app/globals.css";
 import Providers from "@/components/Providers";
 import PwaRegister from "@/components/PwaRegister";
@@ -10,6 +11,7 @@ const SITE_NAME = "Vape Ustad";
 const SITE_DESCRIPTION =
   "Shop premium vape devices, e-liquids, coils, disposables, and accessories at Vape Ustad with a clean, fast, and trusted ecommerce experience in Pakistan.";
 const OG_IMAGE = "/og.png";
+const ATTENDANCE_HOST = "attendance.vapeustad.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -94,17 +96,23 @@ export const viewport: Viewport = {
   colorScheme: "light",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const headersList = await headers();
+  const host = headersList.get("host")?.split(":")[0]?.toLowerCase() || "";
+  const forceMinimalChrome = host === ATTENDANCE_HOST;
+
   return (
     <html lang="en" suppressHydrationWarning className="light">
       <body className="bg-[#fefefe] text-black">
         <Providers>
           <PwaRegister />
-          <SiteChrome>{children}</SiteChrome>
+          <SiteChrome forceMinimalChrome={forceMinimalChrome}>
+            {children}
+          </SiteChrome>
           <Toaster richColors position="top-center" closeButton />
         </Providers>
       </body>

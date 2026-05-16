@@ -6,14 +6,19 @@ import Shortcuts from "@/components/Shortcuts";
 import AgeVerificationModal from "@/components/AgeVerificationModal";
 import MobileBottomNav from "@/components/MobileBottomNav";
 
+type SiteChromeProps = {
+  children: React.ReactNode;
+  forceMinimalChrome?: boolean;
+};
+
 export default function SiteChrome({
   children,
-}: {
-  children: React.ReactNode;
-}) {
+  forceMinimalChrome = false,
+}: SiteChromeProps) {
   const pathname = usePathname();
 
   const isAttendanceApp =
+    forceMinimalChrome ||
     pathname.startsWith("/attendance") ||
     pathname.startsWith("/staff-attendance");
 

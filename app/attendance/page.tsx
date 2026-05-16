@@ -167,6 +167,39 @@ function isPosSource() {
   }
 }
 
+function isAttendanceHost() {
+  if (typeof window === "undefined") return false;
+
+  return window.location.hostname === "attendance.vapeustad.com";
+}
+
+function getCurrentAttendancePath() {
+  if (typeof window === "undefined") return "/attendance";
+
+  const search = window.location.search || "";
+
+  if (isAttendanceHost()) {
+    return `/${search}`;
+  }
+
+  const pathname = window.location.pathname || "/attendance";
+
+  if (pathname.startsWith("/staff-attendance")) {
+    return `/staff-attendance${search}`;
+  }
+
+  return `/attendance${search}`;
+}
+
+function getStaffAppMode() {
+  if (typeof window === "undefined") return false;
+
+  return (
+    isAttendanceHost() ||
+    window.location.pathname.startsWith("/staff-attendance")
+  );
+}
+
 export default function AttendancePage() {
   const router = useRouter();
 
@@ -186,8 +219,10 @@ export default function AttendancePage() {
   const [errorText, setErrorText] = useState("");
   const [bridgeToken, setBridgeToken] = useState("");
   const [posMode, setPosMode] = useState(false);
+  const [staffAppMode, setStaffAppMode] = useState(false);
 
   const isBridgeMode = Boolean(bridgeToken);
+  const isDedicatedMode = posMode || staffAppMode;
 
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
@@ -224,7 +259,7 @@ export default function AttendancePage() {
       const token = tokenFromCheck || (await getAccessToken());
 
       if (!token) {
-        router.replace("/account/login?next=/attendance");
+        router.replace(`/account/login?next=${encodeURIComponent(getCurrentAttendancePath())}`);
         return;
       }
 
@@ -402,7 +437,7 @@ export default function AttendancePage() {
       const token = await getAccessToken();
 
       if (!token) {
-        router.replace("/account/login?next=/attendance");
+        router.replace(`/account/login?next=${encodeURIComponent(getCurrentAttendancePath())}`);
         return;
       }
 
@@ -455,9 +490,11 @@ export default function AttendancePage() {
 
       const nextBridgeToken = getBridgeTokenFromUrl();
       const nextPosMode = isPosSource();
+      const nextStaffAppMode = getStaffAppMode();
 
       setBridgeToken(nextBridgeToken);
       setPosMode(nextPosMode);
+      setStaffAppMode(nextStaffAppMode);
 
       if (nextBridgeToken) {
         setAuthLoading(false);
@@ -469,7 +506,7 @@ export default function AttendancePage() {
       const session = data.session;
 
       if (!session?.access_token) {
-        router.replace("/account/login?next=/attendance");
+        router.replace(`/account/login?next=${encodeURIComponent(getCurrentAttendancePath())}`);
         return;
       }
 
@@ -513,8 +550,8 @@ export default function AttendancePage() {
   }
 
   return (
-    <div className={`min-h-screen bg-[#f7f7f8] px-4 ${posMode ? "py-3" : "py-6"}`}>
-      <div className={`mx-auto space-y-5 ${posMode ? "max-w-4xl" : "max-w-5xl"}`}>
+    <div className={`min-h-screen bg-[#f7f7f8] px-4 ${isDedicatedMode ? "py-3" : "py-6"}`}>
+      <div className={`mx-auto space-y-5 ${isDedicatedMode ? "max-w-4xl" : "max-w-5xl"}`}>
         <div className="overflow-hidden rounded-[32px] border border-neutral-200 bg-white shadow-[0_20px_70px_rgba(0,0,0,0.07)]">
           <div className="border-b border-neutral-200 bg-gradient-to-br from-white via-white to-[#fff7f7] p-6 sm:p-8">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
@@ -525,7 +562,7 @@ export default function AttendancePage() {
 
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.24em] text-[#a30105]">
-                    {isBridgeMode ? "POS Staff Attendance" : "Staff Attendance"}
+                    {isBridgeMode ? "POS Staff Attendance" : staffAppMode ? "Vape Ustad Attendance App" : "Staff Attendance"}
                   </p>
                   <h1 className="mt-2 text-3xl font-black tracking-tight text-neutral-950">
                     Check-in / Check-out
@@ -537,7 +574,7 @@ export default function AttendancePage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {!posMode ? (
+                {!isDedicatedMode ? (
                   <Link
                     href="/account"
                     className="inline-flex items-center justify-center rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-black text-neutral-900 transition hover:bg-neutral-50"
@@ -767,10 +804,20 @@ export default function AttendancePage() {
                     <p className="mx-auto mt-2 max-w-md text-sm font-bold leading-6 text-green-700">
                       Your check-in and check-out records have been saved for today.
                     </p>
+
+                    {isDedicatedMode ? (
+                      <button
+                        type="button"
+                        onClick={() => window.close()}
+                        className="mt-5 inline-flex items-center justify-center rounded-2xl bg-green-700 px-5 py-3 text-sm font-black uppercase text-white transition hover:bg-green-800"
+                      >
+                        Close App
+                      </button>
+                    ) : null}
                   </div>
                 )}
 
-                {!posMode ? (
+                {!isDedicatedMode ? (
                   <div className="mt-5 grid gap-3 sm:grid-cols-2">
                     <Link
                       href="/account"
