@@ -22,6 +22,10 @@ export default function MobileBottomNav() {
 
   useEffect(() => setReady(true), []);
 
+  if (pathname.startsWith("/attendance")) {
+    return null;
+  }
+
   const cartCount = ready ? count() : 0;
 
   const isHome = pathname === "/";
