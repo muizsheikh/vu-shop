@@ -1,16 +1,22 @@
 {
   "name": "Vape Ustad",
   "short_name": "Vape Ustad",
-  "description": "Premium vape store, customer account, checkout, admin tools and staff attendance for Vape Ustad.",
+  "description": "Premium vape store, customer account, checkout and admin tools for Vape Ustad.",
   "id": "/?source=pwa",
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "browser"],
+  "display_override": [
+    "standalone",
+    "browser"
+  ],
   "orientation": "portrait",
   "theme_color": "#fefefe",
   "background_color": "#fefefe",
-  "categories": ["shopping", "business"],
+  "categories": [
+    "shopping",
+    "business"
+  ],
   "lang": "en-PK",
   "dir": "ltr",
   "icons": [
@@ -39,21 +45,24 @@
       "short_name": "Products",
       "description": "Browse Vape Ustad products",
       "url": "/products?source=pwa",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "My Account",
       "short_name": "Account",
-      "description": "Open customer or staff account",
+      "description": "Open customer account and admin tools",
       "url": "/account?source=pwa",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
-    },
-    {
-      "name": "Attendance",
-      "short_name": "Attendance",
-      "description": "Open staff attendance",
-      "url": "/attendance?source=pwa",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ]
 }
