@@ -147,6 +147,26 @@ function getRadiusBadge(value: boolean | null | undefined) {
   };
 }
 
+function getBridgeTokenFromUrl() {
+  if (typeof window === "undefined") return "";
+
+  try {
+    return new URLSearchParams(window.location.search).get("bridge_token") || "";
+  } catch {
+    return "";
+  }
+}
+
+function isPosSource() {
+  if (typeof window === "undefined") return false;
+
+  try {
+    return new URLSearchParams(window.location.search).get("source") === "pos";
+  } catch {
+    return false;
+  }
+}
+
 export default function AttendancePage() {
   const router = useRouter();
 
@@ -164,17 +184,43 @@ export default function AttendancePage() {
 
   const [successText, setSuccessText] = useState("");
   const [errorText, setErrorText] = useState("");
+  const [bridgeToken, setBridgeToken] = useState("");
+  const [posMode, setPosMode] = useState(false);
+
+  const isBridgeMode = Boolean(bridgeToken);
 
   async function getAccessToken() {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token || "";
   }
 
-  async function loadStatus(tokenFromCheck?: string) {
+  async function loadStatus(tokenFromCheck?: string, bridgeTokenFromCheck?: string) {
     setLoadingStatus(true);
     setErrorText("");
 
     try {
+      const activeBridgeToken = bridgeTokenFromCheck || bridgeToken;
+
+      if (activeBridgeToken) {
+        const res = await fetch(
+          `/api/attendance/pos-check?bridge_token=${encodeURIComponent(activeBridgeToken)}`,
+          {
+            cache: "no-store",
+          }
+        );
+
+        const json = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          throw new Error(json?.error || "Failed to load POS attendance status.");
+        }
+
+        setEmployee(json?.employee || null);
+        setAttendance(json?.attendance || null);
+        setStatus(json?.status || null);
+        return;
+      }
+
       const token = tokenFromCheck || (await getAccessToken());
 
       if (!token) {
@@ -312,13 +358,6 @@ export default function AttendancePage() {
     setSuccessText("");
 
     try {
-      const token = await getAccessToken();
-
-      if (!token) {
-        router.replace("/account/login?next=/attendance");
-        return;
-      }
-
       if (!employee?.id) {
         throw new Error("Employee profile not found.");
       }
@@ -328,6 +367,44 @@ export default function AttendancePage() {
       }
 
       const position = await getBrowserLocation();
+
+      if (bridgeToken) {
+        setUploadingPhoto(true);
+
+        const form = new FormData();
+        form.set("bridge_token", bridgeToken);
+        form.set("action", action);
+        form.set("latitude", String(position.coords.latitude));
+        form.set("longitude", String(position.coords.longitude));
+        form.set("photo", photoFile);
+
+        const res = await fetch("/api/attendance/pos-check", {
+          method: "POST",
+          body: form,
+        });
+
+        const json = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          throw new Error(json?.error || "POS attendance save failed.");
+        }
+
+        clearSelectedPhoto();
+        setSuccessText(json?.message || "Attendance saved successfully.");
+        setEmployee(json?.employee || null);
+        setAttendance(json?.attendance || null);
+        setStatus(json?.status || null);
+
+        await loadStatus(undefined, bridgeToken);
+        return;
+      }
+
+      const token = await getAccessToken();
+
+      if (!token) {
+        router.replace("/account/login?next=/attendance");
+        return;
+      }
 
       setUploadingPhoto(true);
       const photoUrl = await uploadAttendancePhoto(action, photoFile, employee.id);
@@ -375,6 +452,18 @@ export default function AttendancePage() {
   useEffect(() => {
     async function init() {
       setAuthLoading(true);
+
+      const nextBridgeToken = getBridgeTokenFromUrl();
+      const nextPosMode = isPosSource();
+
+      setBridgeToken(nextBridgeToken);
+      setPosMode(nextPosMode);
+
+      if (nextBridgeToken) {
+        setAuthLoading(false);
+        await loadStatus(undefined, nextBridgeToken);
+        return;
+      }
 
       const { data } = await supabase.auth.getSession();
       const session = data.session;
@@ -424,8 +513,8 @@ export default function AttendancePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] px-4 py-6">
-      <div className="mx-auto max-w-5xl space-y-5">
+    <div className={`min-h-screen bg-[#f7f7f8] px-4 ${posMode ? "py-3" : "py-6"}`}>
+      <div className={`mx-auto space-y-5 ${posMode ? "max-w-4xl" : "max-w-5xl"}`}>
         <div className="overflow-hidden rounded-[32px] border border-neutral-200 bg-white shadow-[0_20px_70px_rgba(0,0,0,0.07)]">
           <div className="border-b border-neutral-200 bg-gradient-to-br from-white via-white to-[#fff7f7] p-6 sm:p-8">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
@@ -436,7 +525,7 @@ export default function AttendancePage() {
 
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.24em] text-[#a30105]">
-                    Staff Attendance
+                    {isBridgeMode ? "POS Staff Attendance" : "Staff Attendance"}
                   </p>
                   <h1 className="mt-2 text-3xl font-black tracking-tight text-neutral-950">
                     Check-in / Check-out
@@ -448,12 +537,15 @@ export default function AttendancePage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Link
-                  href="/account"
-                  className="inline-flex items-center justify-center rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-black text-neutral-900 transition hover:bg-neutral-50"
-                >
-                  Account
-                </Link>
+                {!posMode ? (
+                  <Link
+                    href="/account"
+                    className="inline-flex items-center justify-center rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-black text-neutral-900 transition hover:bg-neutral-50"
+                  >
+                    Account
+                  </Link>
+                ) : null}
+
                 <button
                   type="button"
                   onClick={() => loadStatus()}
@@ -678,21 +770,23 @@ export default function AttendancePage() {
                   </div>
                 )}
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <Link
-                    href="/account"
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-5 py-4 text-sm font-black text-neutral-900 transition hover:bg-neutral-50"
-                  >
-                    Back to Account
-                  </Link>
-                  <Link
-                    href="/account"
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] px-5 py-4 text-sm font-black text-[#a30105] transition hover:bg-[#fff1f1]"
-                  >
-                    Staff Dashboard
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </div>
+                {!posMode ? (
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <Link
+                      href="/account"
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-5 py-4 text-sm font-black text-neutral-900 transition hover:bg-neutral-50"
+                    >
+                      Back to Account
+                    </Link>
+                    <Link
+                      href="/account"
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] px-5 py-4 text-sm font-black text-[#a30105] transition hover:bg-[#fff1f1]"
+                    >
+                      Staff Dashboard
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}
