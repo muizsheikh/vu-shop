@@ -222,8 +222,8 @@ export default function AdminShell({ children }: AdminShellProps) {
         label: "Settings",
         href: "/admin/settings",
         icon: Settings,
-        badge: userCanManageSettings ? "Soon" : "Locked",
-        disabled: true,
+        badge: "Manage",
+        disabled: false,
         hidden: !userCanManageSettings,
       },
     ];
