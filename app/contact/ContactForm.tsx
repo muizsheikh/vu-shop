@@ -246,7 +246,7 @@ export default function ContactForm() {
 
           <button
             disabled={loading}
-            className="inline-flex min-h-[48px] items-center justify-center rounded-2xl bg-vu-red px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_25px_rgba(163,1,5,0.18)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-[48px] items-center justify-center rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_25px_rgba(163,1,5,0.18)] transition hover:bg-[#8f0104] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? "Sending..." : "Send Message"}
           </button>
