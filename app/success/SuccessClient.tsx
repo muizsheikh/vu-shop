@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Suspense } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   CheckCircle2,
@@ -16,22 +16,64 @@ import {
   UserRound,
 } from "lucide-react";
 
-const WHATSAPP_NUMBER = "923015554249";
+const DEFAULT_WHATSAPP_NUMBER = "923015554249";
+const DEFAULT_SUPPORT_EMAIL = "info@vapeustad.com";
+
+type PublicSettings = {
+  store_name?: string;
+  support_email?: string;
+  whatsapp_number?: string;
+};
+
+function cleanWhatsAppNumber(value: string) {
+  return String(value || "").replace(/[^0-9]/g, "");
+}
 
 function SuccessInner() {
   const params = useSearchParams();
   const method = (params.get("method") || "").toLowerCase();
   const so = params.get("so") || "";
 
-  const isCOD = method === "cod";
+  const [settings, setSettings] = useState<PublicSettings | null>(null);
 
-  const whatsappMessage = encodeURIComponent(
-    `Assalam o Alaikum, mera Vape Ustad order place ho gaya hai${
-      so ? `.\nSales Order: ${so}` : ""
-    }.\nMujhe is order ke bare me help chahiye.`
+  useEffect(() => {
+    let alive = true;
+
+    async function loadSettings() {
+      try {
+        const res = await fetch("/api/settings", { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+
+        if (!alive || !res.ok) return;
+
+        setSettings(json?.settings || json || null);
+      } catch {
+        // Public settings are optional on the success page.
+      }
+    }
+
+    loadSettings();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const isCOD = method === "cod";
+  const supportEmail = String(settings?.support_email || DEFAULT_SUPPORT_EMAIL).trim();
+  const whatsappNumber = cleanWhatsAppNumber(
+    String(settings?.whatsapp_number || DEFAULT_WHATSAPP_NUMBER)
   );
 
-  const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${whatsappMessage}`;
+  const whatsappUrl = useMemo(() => {
+    const whatsappMessage = encodeURIComponent(
+      `Hello Vape Ustad, my order has been placed successfully${
+        so ? `.\nSales Order: ${so}` : ""
+      }.\nI need help with this order.`
+    );
+
+    return `https://wa.me/${whatsappNumber || DEFAULT_WHATSAPP_NUMBER}?text=${whatsappMessage}`;
+  }, [so, whatsappNumber]);
 
   return (
     <section className="mx-auto max-w-[1200px] px-4 py-10 md:px-6 md:py-14">
@@ -119,11 +161,11 @@ function SuccessInner() {
                   <Headphones className="h-5 w-5 text-emerald-600" />
                 </div>
                 <div className="text-sm font-semibold text-black">
-                  Next Step
+                  Support
                 </div>
               </div>
               <div className="mt-3 text-sm leading-6 text-black/65">
-                Our team may contact you to confirm details before processing.
+                Need help? Contact us through WhatsApp or email at {supportEmail}.
               </div>
             </div>
           </div>
@@ -133,7 +175,7 @@ function SuccessInner() {
               <FileText className="mt-1 h-5 w-5 shrink-0 text-emerald-600" />
               <p className="text-sm leading-7 text-black/70">
                 Please keep your phone available. For Cash on Delivery orders,
-                our team may confirm order details before final processing.
+                our team may contact you to confirm order details before final processing.
               </p>
             </div>
           </div>
