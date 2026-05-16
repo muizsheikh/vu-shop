@@ -408,7 +408,7 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-green-200 bg-green-50 px-4 py-2 text-xs font-black uppercase text-green-700">
+          <span className="rounded-full border border-green-200 bg-green-50 px-4 py-2 text-xs font-black text-green-700">
             Admin: {adminEmail}
           </span>
 

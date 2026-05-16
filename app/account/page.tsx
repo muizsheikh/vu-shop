@@ -340,6 +340,77 @@ export default function AccountPage() {
 
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="space-y-6">
+          {hasAdminAccess ? (
+            <div className="rounded-[30px] border border-[#a30105]/20 bg-[#fff7f7] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+              <h2 className="text-xl font-black text-neutral-950">
+                Admin Tools
+              </h2>
+
+              <p className="mt-2 text-sm font-bold leading-6 text-neutral-600">
+                Your account has admin-area access through database role permissions.
+              </p>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <Link
+                  href="/admin"
+                  className="inline-flex items-center justify-center rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-black text-white transition hover:bg-[#8f0104]"
+                >
+                  Admin Dashboard
+                </Link>
+
+                <Link
+                  href="/admin/orders"
+                  className="inline-flex items-center justify-center rounded-2xl border border-[#a30105]/20 bg-white px-5 py-3 text-sm font-black text-[#a30105] transition hover:bg-[#fff1f1]"
+                >
+                  Manage Orders
+                </Link>
+              </div>
+            </div>
+          ) : null}
+          <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
+            <h2 className="text-xl font-black text-neutral-950">
+              Quick Actions
+            </h2>
+
+            <div className="mt-5 grid gap-3">
+              <Link
+                href="/attendance"
+                className="rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] p-4 transition hover:border-[#a30105] hover:bg-[#fff1f1]"
+              >
+                <div className="text-sm font-black uppercase tracking-wider text-[#a30105]">
+                  My Attendance
+                </div>
+                <p className="mt-1 text-sm font-bold leading-6 text-neutral-600">
+                  Staff check-in / check-out with geo location.
+                </p>
+              </Link>
+
+              <Link
+                href="/account/orders"
+                className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 transition hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
+              >
+                <div className="text-sm font-black uppercase tracking-wider text-neutral-900">
+                  My Orders
+                </div>
+                <p className="mt-1 text-sm font-bold leading-6 text-neutral-600">
+                  View your full order history and tracking.
+                </p>
+              </Link>
+
+              <Link
+                href="/products"
+                className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 transition hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
+              >
+                <div className="text-sm font-black uppercase tracking-wider text-neutral-900">
+                  Continue Shopping
+                </div>
+                <p className="mt-1 text-sm font-bold leading-6 text-neutral-600">
+                  Browse latest products on Vape Ustad.
+                </p>
+              </Link>
+            </div>
+          </div>
+
           <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
             <h2 className="text-xl font-black text-neutral-950">
               Profile Details
@@ -393,77 +464,6 @@ export default function AccountPage() {
             </Link>
           </div>
 
-          <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
-            <h2 className="text-xl font-black text-neutral-950">
-              Quick Actions
-            </h2>
-
-            <div className="mt-5 grid gap-3">
-              <Link
-                href="/attendance"
-                className="rounded-2xl border border-[#a30105]/20 bg-[#fff7f7] p-4 transition hover:border-[#a30105] hover:bg-[#fff1f1]"
-              >
-                <div className="text-sm font-black uppercase tracking-wider text-[#a30105]">
-                  My Attendance
-                </div>
-                <p className="mt-1 text-sm font-bold leading-6 text-neutral-600">
-                  Staff check-in / check-out with geo location.
-                </p>
-              </Link>
-
-              <Link
-                href="/account/orders"
-                className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 transition hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
-              >
-                <div className="text-sm font-black uppercase tracking-wider text-neutral-900">
-                  My Orders
-                </div>
-                <p className="mt-1 text-sm font-bold leading-6 text-neutral-600">
-                  View your full order history and tracking.
-                </p>
-              </Link>
-
-              <Link
-                href="/products"
-                className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 transition hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
-              >
-                <div className="text-sm font-black uppercase tracking-wider text-neutral-900">
-                  Continue Shopping
-                </div>
-                <p className="mt-1 text-sm font-bold leading-6 text-neutral-600">
-                  Browse latest products on Vape Ustad.
-                </p>
-              </Link>
-            </div>
-          </div>
-
-          {hasAdminAccess ? (
-            <div className="rounded-[30px] border border-[#a30105]/20 bg-[#fff7f7] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
-              <h2 className="text-xl font-black text-neutral-950">
-                Admin Tools
-              </h2>
-
-              <p className="mt-2 text-sm font-bold leading-6 text-neutral-600">
-                Your account has admin-area access through database role permissions.
-              </p>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <Link
-                  href="/admin"
-                  className="inline-flex items-center justify-center rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-black text-white transition hover:bg-[#8f0104]"
-                >
-                  Admin Dashboard
-                </Link>
-
-                <Link
-                  href="/admin/orders"
-                  className="inline-flex items-center justify-center rounded-2xl border border-[#a30105]/20 bg-white px-5 py-3 text-sm font-black text-[#a30105] transition hover:bg-[#fff1f1]"
-                >
-                  Manage Orders
-                </Link>
-              </div>
-            </div>
-          ) : null}
         </div>
 
         <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">

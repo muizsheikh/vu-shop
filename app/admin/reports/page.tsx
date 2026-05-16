@@ -11,7 +11,6 @@ import {
   Download,
   Loader2,
   MapPin,
-  PackageCheck,
   Printer,
   ShieldCheck,
   ShoppingBag,
@@ -40,8 +39,7 @@ type ReportTab =
   | "status"
   | "payments"
   | "cities"
-  | "customers"
-  | "roadmap";
+  | "customers";
 
 type ReportSummary = {
   total_orders: number;
@@ -102,7 +100,6 @@ const REPORT_TABS: { key: ReportTab; label: string }[] = [
   { key: "payments", label: "Payments" },
   { key: "cities", label: "Cities" },
   { key: "customers", label: "Customers" },
-  { key: "roadmap", label: "HR Roadmap" },
 ];
 
 function formatPKR(value: number | null | undefined) {
@@ -491,8 +488,7 @@ export default function AdminReportsPage() {
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
               Business reporting foundation for revenue, order status, payment
-              methods, cities and top customers. Attendance + ERPNext geo module
-              is part of the roadmap.
+              methods, cities and top customers.
             </p>
           </div>
 
@@ -547,7 +543,7 @@ export default function AdminReportsPage() {
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          <span className="rounded-full border border-green-200 bg-green-50 px-4 py-2 text-xs font-black uppercase text-green-700">
+          <span className="rounded-full border border-green-200 bg-green-50 px-4 py-2 text-xs font-black text-green-700">
             Admin: {adminEmail}
           </span>
 
@@ -822,33 +818,6 @@ export default function AdminReportsPage() {
 
       ) : null}
 
-      {(activeTab === "overview" || activeTab === "roadmap") ? (
-      <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
-        <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#a30105]">
-          Roadmap
-        </p>
-
-        <h2 className="mt-2 text-2xl font-black text-neutral-950">
-          Next Business Module
-        </h2>
-
-        <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 p-5">
-          <div className="flex items-start gap-3">
-            <PackageCheck className="mt-1 h-5 w-5 text-blue-700" />
-            <div>
-              <div className="font-black text-blue-800">
-                Employee Attendance + ERPNext Sync + Geo Location
-              </div>
-              <p className="mt-2 text-sm font-bold leading-6 text-blue-700">
-                Planned module: employee check-in/check-out, branch-wise
-                attendance, geo-location validation, ERPNext Employee/Attendance
-                linking, late/absent/overtime reports and audit logs.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-      ) : null}
     </div>
   );
 }
