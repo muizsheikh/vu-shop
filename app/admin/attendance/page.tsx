@@ -1469,7 +1469,24 @@ export default function AdminAttendancePage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <input value={form.employee_name} onChange={(event) => updateForm("employee_name", event.target.value)} placeholder="Employee Name *" className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#a30105]" />
-            <input value={form.branch_name} onChange={(event) => updateForm("branch_name", event.target.value)} placeholder="Home Branch Name *" className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#a30105]" />
+            <select
+              value={form.branch_name}
+              onChange={(event) => updateForm("branch_name", event.target.value)}
+              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-800 outline-none focus:border-[#a30105]"
+            >
+              <option value="">Select Home Branch *</option>
+              {branches.map((branch) => (
+                <option key={branch.id} value={branch.branch_name}>
+                  {branch.branch_name}
+                  {branch.branch_code ? ` — ${branch.branch_code}` : ""}
+                  {branch.is_active ? "" : " — Inactive"}
+                </option>
+              ))}
+              {form.branch_name &&
+              !branches.some((branch) => branch.branch_name === form.branch_name) ? (
+                <option value={form.branch_name}>{form.branch_name}</option>
+              ) : null}
+            </select>
             <input value={form.employee_email} onChange={(event) => updateForm("employee_email", event.target.value)} placeholder="Employee Email" className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#a30105]" />
             <input value={form.employee_phone} onChange={(event) => updateForm("employee_phone", event.target.value)} placeholder="Employee Phone" className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#a30105]" />
             <input value={form.erp_employee_id} onChange={(event) => updateForm("erp_employee_id", event.target.value)} placeholder="ERPNext Employee ID" className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#a30105]" />
@@ -1518,12 +1535,24 @@ export default function AdminAttendancePage() {
               placeholder="Employee Name *"
               className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-amber-700"
             />
-            <input
+            <select
               value={editForm.branch_name}
               onChange={(event) => updateEditForm("branch_name", event.target.value)}
-              placeholder="Home Branch Name *"
-              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold outline-none focus:border-amber-700"
-            />
+              className="h-12 rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-800 outline-none focus:border-amber-700"
+            >
+              <option value="">Select Home Branch *</option>
+              {branches.map((branch) => (
+                <option key={branch.id} value={branch.branch_name}>
+                  {branch.branch_name}
+                  {branch.branch_code ? ` — ${branch.branch_code}` : ""}
+                  {branch.is_active ? "" : " — Inactive"}
+                </option>
+              ))}
+              {editForm.branch_name &&
+              !branches.some((branch) => branch.branch_name === editForm.branch_name) ? (
+                <option value={editForm.branch_name}>{editForm.branch_name}</option>
+              ) : null}
+            </select>
             <input
               value={editForm.employee_email}
               onChange={(event) => updateEditForm("employee_email", event.target.value)}
