@@ -35,9 +35,7 @@ function formatPKR(value: number) {
   return new Intl.NumberFormat("en-PK").format(Number(value || 0));
 }
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return "Not available";
-
+function formatDate(value: string) {
   try {
     return new Date(value).toLocaleString("en-PK", {
       dateStyle: "medium",
@@ -253,7 +251,6 @@ export default function AccountPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-12">
@@ -295,32 +292,21 @@ export default function AccountPage() {
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.25em] text-[#a30105]">
-              "Vape Ustad Account"
+              Vape Ustad Account
             </p>
 
             <h1 className="mt-3 text-3xl font-black text-neutral-950">
-              "My Account"
+              My Account
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
-              "Manage your profile, order history and account access from one place."
+              Manage your profile, order history and account access from one place.
             </p>
 
             <div className="mt-4 flex flex-wrap gap-2">
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-black text-neutral-700">
                 {email}
               </span>
-
-              {hasEmployeeAccess ? (
-                <>
-                  <span className="rounded-full border border-[#a30105]/20 bg-[#fff7f7] px-4 py-2 text-xs font-black uppercase text-[#a30105]">
-                    Staff Access Enabled
-                  </span>
-                  <span className={`rounded-full border px-4 py-2 text-xs font-black uppercase ${getAttendanceStatusClass(attendanceState.status)}`}>
-                    Today: {getAttendanceStatusLabel(attendanceState.status)}
-                  </span>
-                </>
-              ) : null}
 
               {hasAdminAccess ? (
                 <>
@@ -350,6 +336,7 @@ export default function AccountPage() {
           <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
             {errorText}
           </div>
+        ) : null}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
@@ -381,6 +368,7 @@ export default function AccountPage() {
               </div>
             </div>
           ) : null}
+
           <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
             <h2 className="text-xl font-black text-neutral-950">
               Quick Actions
@@ -468,99 +456,99 @@ export default function AccountPage() {
         </div>
 
         <div className="rounded-[30px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.25em] text-[#a30105]">
-                  Order History
-                </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-[#a30105]">
+                Order History
+              </p>
 
-                <h2 className="mt-2 text-2xl font-black text-neutral-950">
-                  Recent Orders
-                </h2>
-              </div>
-
-              <Link
-                href="/account/orders"
-                className="inline-flex rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-xs font-black uppercase text-neutral-800 transition hover:bg-neutral-50"
-              >
-                View All
-              </Link>
+              <h2 className="mt-2 text-2xl font-black text-neutral-950">
+                Recent Orders
+              </h2>
             </div>
 
-            {orders.length === 0 ? (
-              <div className="mt-6 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center">
-                <h3 className="text-lg font-black text-neutral-950">
-                  No Orders Yet
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-neutral-500">
-                  Your recent orders will appear here after checkout.
-                </p>
+            <Link
+              href="/account/orders"
+              className="inline-flex rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-xs font-black uppercase text-neutral-800 transition hover:bg-neutral-50"
+            >
+              View All
+            </Link>
+          </div>
 
-                <Link
-                  href="/products"
-                  className="mt-5 inline-flex rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-black text-white transition hover:bg-[#8f0104]"
-                >
-                  Start Shopping
-                </Link>
-              </div>
-            ) : (
-              <div className="mt-6 space-y-4">
-                {orders.map((order) => {
-                  const orderNumber =
-                    order.sales_order || `Order ${order.id.slice(0, 8)}`;
-                  const totals = getOrderTotals(order.total_amount);
-                  const itemCount = Array.isArray(order.items)
-                    ? order.items.length
-                    : 0;
+          {orders.length === 0 ? (
+            <div className="mt-6 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center">
+              <h3 className="text-lg font-black text-neutral-950">
+                No Orders Yet
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-neutral-500">
+                Your recent orders will appear here after checkout.
+              </p>
 
-                  return (
-                    <Link
-                      key={order.id}
-                      href={`/account/orders/${order.id}`}
-                      className={`block rounded-2xl border p-4 transition hover:border-[#a30105]/30 hover:bg-[#fff7f7] ${getOrderCardClass(
-                        order.status
-                      )}`}
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <div className="font-black text-neutral-950">
-                            {orderNumber}
-                          </div>
+              <Link
+                href="/products"
+                className="mt-5 inline-flex rounded-2xl bg-[#a30105] px-5 py-3 text-sm font-black text-white transition hover:bg-[#8f0104]"
+              >
+                Start Shopping
+              </Link>
+            </div>
+          ) : (
+            <div className="mt-6 space-y-4">
+              {orders.map((order) => {
+                const orderNumber =
+                  order.sales_order || `Order ${order.id.slice(0, 8)}`;
+                const totals = getOrderTotals(order.total_amount);
+                const itemCount = Array.isArray(order.items)
+                  ? order.items.length
+                  : 0;
 
-                          <div className="mt-1 text-xs font-bold text-neutral-500">
-                            {formatDate(order.created_at)}
-                          </div>
-
-                          <div className="mt-2 text-xs font-bold text-neutral-500">
-                            {itemCount} item{itemCount === 1 ? "" : "s"} •{" "}
-                            {order.payment_method || "COD"}
-                          </div>
+                return (
+                  <Link
+                    key={order.id}
+                    href={`/account/orders/${order.id}`}
+                    className={`block rounded-2xl border p-4 transition hover:border-[#a30105]/30 hover:bg-[#fff7f7] ${getOrderCardClass(
+                      order.status
+                    )}`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="font-black text-neutral-950">
+                          {orderNumber}
                         </div>
 
-                        <div className="sm:text-right">
-                          <span
-                            className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getStatusBadgeClass(
-                              order.status
-                            )}`}
-                          >
-                            {getStatusLabel(order.status)}
-                          </span>
+                        <div className="mt-1 text-xs font-bold text-neutral-500">
+                          {formatDate(order.created_at)}
+                        </div>
 
-                          <div className="mt-2 text-lg font-black text-neutral-950">
-                            Rs {formatPKR(totals.total)}
-                          </div>
-
-                          <div className="mt-1 text-xs font-bold text-neutral-500">
-                            {getStatusMiniText(order.status)}
-                          </div>
+                        <div className="mt-2 text-xs font-bold text-neutral-500">
+                          {itemCount} item{itemCount === 1 ? "" : "s"} •{" "}
+                          {order.payment_method || "COD"}
                         </div>
                       </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+
+                      <div className="sm:text-right">
+                        <span
+                          className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${getStatusBadgeClass(
+                            order.status
+                          )}`}
+                        >
+                          {getStatusLabel(order.status)}
+                        </span>
+
+                        <div className="mt-2 text-lg font-black text-neutral-950">
+                          Rs {formatPKR(totals.total)}
+                        </div>
+
+                        <div className="mt-1 text-xs font-bold text-neutral-500">
+                          {getStatusMiniText(order.status)}
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
