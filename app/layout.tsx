@@ -1,12 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "@/app/globals.css";
 import Providers from "@/components/Providers";
-import Navbar from "@/components/Navbar";
-import Shortcuts from "@/components/Shortcuts";
-import AgeVerificationModal from "@/components/AgeVerificationModal";
-import { Toaster } from "sonner";
-import MobileBottomNav from "@/components/MobileBottomNav";
 import PwaRegister from "@/components/PwaRegister";
+import SiteChrome from "@/components/SiteChrome";
+import { Toaster } from "sonner";
 
 const SITE_URL = "https://vapeustad.com";
 const SITE_NAME = "Vape Ustad";
@@ -107,13 +104,7 @@ export default function RootLayout({
       <body className="bg-[#fefefe] text-black">
         <Providers>
           <PwaRegister />
-          <AgeVerificationModal />
-          <Navbar />
-          <main className="mx-auto max-w-[1200px] bg-[#fefefe] px-4 pb-24 pt-8 text-black md:pb-8">
-            {children}
-          </main>
-          <Shortcuts />
-          <MobileBottomNav />
+          <SiteChrome>{children}</SiteChrome>
           <Toaster richColors position="top-center" closeButton />
         </Providers>
       </body>

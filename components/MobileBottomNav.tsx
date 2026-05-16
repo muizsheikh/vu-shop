@@ -22,7 +22,7 @@ export default function MobileBottomNav() {
 
   useEffect(() => setReady(true), []);
 
-  if (pathname.startsWith("/attendance")) {
+  if (pathname.startsWith("/attendance") || pathname.startsWith("/staff-attendance")) {
     return null;
   }
 
