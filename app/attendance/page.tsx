@@ -806,13 +806,10 @@ export default function AttendancePage() {
                     </p>
 
                     {isDedicatedMode ? (
-                      <button
-                        type="button"
-                        onClick={() => window.close()}
-                        className="mt-5 inline-flex items-center justify-center rounded-2xl bg-green-700 px-5 py-3 text-sm font-black uppercase text-white transition hover:bg-green-800"
-                      >
-                        Close App
-                      </button>
+                      <div className="mt-5 rounded-2xl border border-green-200 bg-white px-5 py-4 text-sm font-black leading-6 text-green-800">
+                        Attendance completed.<br />
+                        You may now close the app.
+                      </div>
                     ) : null}
                   </div>
                 )}
