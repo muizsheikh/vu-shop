@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,8 +9,15 @@ const DEFAULT_COUNTRY = "Pakistan";
 
 const DELIVERY_ITEM_CODE = "DELIVERY-CHARGES";
 const DELIVERY_ITEM_NAME = "Delivery Charges";
-const DELIVERY_CHARGE = 200;
+const DEFAULT_DELIVERY_CHARGE = 200;
 const MAX_CUSTOMER_NOTE_LENGTH = 500;
+const SETTINGS_KEY = "store_order_settings";
+
+const DEFAULT_ORDER_SETTINGS = {
+  delivery_charge: DEFAULT_DELIVERY_CHARGE,
+  minimum_order_amount: 0,
+  cod_enabled: true,
+};
 
 const PREFERRED_CUSTOMER_GROUPS = [
   process.env.ERP_CUSTOMER_GROUP || "",
@@ -137,6 +145,14 @@ function sanitizeItemName(value: unknown) {
   return sanitizeString(value).slice(0, 200);
 }
 
+function cleanMoney(value: unknown, fallback = 0) {
+  const number = Number(value ?? fallback);
+
+  if (!Number.isFinite(number)) return fallback;
+
+  return Math.max(0, Math.round(number));
+}
+
 type IncomingCartItem = {
   item_code?: string;
   name?: string;
@@ -150,6 +166,12 @@ type NormalizedCartItem = {
   qty: number;
   rate: number;
   amount: number;
+};
+
+type OrderSettings = {
+  delivery_charge: number;
+  minimum_order_amount: number;
+  cod_enabled: boolean;
 };
 
 function normalizeCartItems(rawItems: unknown): NormalizedCartItem[] {
@@ -181,6 +203,32 @@ function normalizeCartItems(rawItems: unknown): NormalizedCartItem[] {
   }
 
   return items;
+}
+
+async function getOrderSettings(): Promise<OrderSettings> {
+  const { data, error } = await supabaseAdmin
+    .from("admin_settings")
+    .select("value")
+    .eq("key", SETTINGS_KEY)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Failed to load order settings.");
+  }
+
+  const value = data?.value && typeof data.value === "object" ? data.value : {};
+
+  return {
+    delivery_charge: cleanMoney(
+      (value as any).delivery_charge,
+      DEFAULT_ORDER_SETTINGS.delivery_charge
+    ),
+    minimum_order_amount: cleanMoney(
+      (value as any).minimum_order_amount,
+      DEFAULT_ORDER_SETTINGS.minimum_order_amount
+    ),
+    cod_enabled: (value as any).cod_enabled !== false,
+  };
 }
 
 /* ---------- Dynamic ERP link resolution ---------- */
@@ -421,7 +469,7 @@ function getTomorrowDate() {
   return d.toISOString().slice(0, 10);
 }
 
-function buildSalesOrderItems(items: NormalizedCartItem[]) {
+function buildSalesOrderItems(items: NormalizedCartItem[], deliveryCharge: number) {
   const productItems = items.map((it) => ({
     item_code: it.item_code,
     qty: it.qty,
@@ -429,12 +477,16 @@ function buildSalesOrderItems(items: NormalizedCartItem[]) {
     description: it.item_name,
   }));
 
+  if (deliveryCharge <= 0) {
+    return productItems;
+  }
+
   return [
     ...productItems,
     {
       item_code: DELIVERY_ITEM_CODE,
       qty: 1,
-      rate: DELIVERY_CHARGE,
+      rate: deliveryCharge,
       description: DELIVERY_ITEM_NAME,
     },
   ];
@@ -443,10 +495,11 @@ function buildSalesOrderItems(items: NormalizedCartItem[]) {
 function buildOrderRemarks(
   items: NormalizedCartItem[],
   customer: { name: string; email: string; phone?: string },
+  settings: OrderSettings,
   customerNote?: string
 ) {
   const productTotal = items.reduce((sum, it) => sum + it.amount, 0);
-  const grandTotal = productTotal + DELIVERY_CHARGE;
+  const grandTotal = productTotal + settings.delivery_charge;
 
   const lines = items.map(
     (it) =>
@@ -463,7 +516,7 @@ function buildOrderRemarks(
     "",
     ...lines,
     "",
-    `Delivery Charges: Rs ${DELIVERY_CHARGE.toLocaleString()}`,
+    `Delivery Charges: Rs ${settings.delivery_charge.toLocaleString()}`,
     `Grand Total: Rs ${grandTotal.toLocaleString()}`,
   ]
     .filter(Boolean)
@@ -483,7 +536,31 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
+    const settings = await getOrderSettings();
+
+    if (!settings.cod_enabled) {
+      return NextResponse.json(
+        {
+          error: "Cash on Delivery is currently disabled. Please choose another payment method.",
+        },
+        { status: 403 }
+      );
+    }
+
     const items = normalizeCartItems(body?.items);
+    const productTotal = items.reduce((sum, item) => sum + item.amount, 0);
+
+    if (settings.minimum_order_amount > 0 && productTotal < settings.minimum_order_amount) {
+      return NextResponse.json(
+        {
+          error: `Minimum order amount is Rs ${settings.minimum_order_amount.toLocaleString()}. Please add more items to continue.`,
+          minimum_order_amount: settings.minimum_order_amount,
+          current_subtotal: productTotal,
+        },
+        { status: 400 }
+      );
+    }
+
     const customerNote = sanitizeCustomerNote(body?.customer_note);
 
     const customerName = sanitizeString(
@@ -529,7 +606,7 @@ export async function POST(req: Request) {
       delivery_date: getTomorrowDate(),
       currency: DEFAULT_CURRENCY,
       conversion_rate: 1,
-      items: buildSalesOrderItems(items),
+      items: buildSalesOrderItems(items, settings.delivery_charge),
       remarks: buildOrderRemarks(
         items,
         {
@@ -537,6 +614,7 @@ export async function POST(req: Request) {
           email: customerEmail,
           phone: customerPhone || undefined,
         },
+        settings,
         customerNote || undefined
       ),
     };
@@ -554,6 +632,11 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       so: so.name,
+      settings: {
+        delivery_charge: settings.delivery_charge,
+        minimum_order_amount: settings.minimum_order_amount,
+        cod_enabled: settings.cod_enabled,
+      },
     });
   } catch (err: any) {
     console.error("POST /api/cod failed:", err);

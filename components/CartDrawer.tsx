@@ -8,7 +8,25 @@ import { toast } from "sonner";
 import { useCartStore } from "@/store/cart";
 import { supabase } from "@/lib/supabaseClient";
 
-const DELIVERY_CHARGE = 200;
+const DEFAULT_DELIVERY_CHARGE = 200;
+
+type PublicSettings = {
+  store_name: string;
+  support_email: string;
+  whatsapp_number: string;
+  delivery_charge: number;
+  minimum_order_amount: number;
+  cod_enabled: boolean;
+};
+
+const DEFAULT_SETTINGS: PublicSettings = {
+  store_name: "Vape Ustad",
+  support_email: "info@vapeustad.com",
+  whatsapp_number: "",
+  delivery_charge: DEFAULT_DELIVERY_CHARGE,
+  minimum_order_amount: 0,
+  cod_enabled: true,
+};
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -27,6 +45,27 @@ function formatPKR(value: number) {
   return new Intl.NumberFormat("en-PK").format(Number(value || 0));
 }
 
+function normalizeSettings(value: any): PublicSettings {
+  const source = value && typeof value === "object" ? value : {};
+
+  return {
+    store_name: String(source.store_name || DEFAULT_SETTINGS.store_name).trim(),
+    support_email: String(source.support_email || DEFAULT_SETTINGS.support_email)
+      .trim()
+      .toLowerCase(),
+    whatsapp_number: String(source.whatsapp_number || "").trim(),
+    delivery_charge: Math.max(
+      0,
+      Math.round(Number(source.delivery_charge ?? DEFAULT_SETTINGS.delivery_charge) || 0)
+    ),
+    minimum_order_amount: Math.max(
+      0,
+      Math.round(Number(source.minimum_order_amount ?? 0) || 0)
+    ),
+    cod_enabled: source.cod_enabled !== false,
+  };
+}
+
 export default function CartDrawer() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -34,8 +73,31 @@ export default function CartDrawer() {
 
   const [ready, setReady] = useState(false);
   const [checkingCheckout, setCheckingCheckout] = useState(false);
+  const [settings, setSettings] = useState<PublicSettings>(DEFAULT_SETTINGS);
+  const [loadingSettings, setLoadingSettings] = useState(false);
 
   useEffect(() => setReady(true), []);
+
+  useEffect(() => {
+    async function loadSettings() {
+      setLoadingSettings(true);
+
+      try {
+        const res = await fetch("/api/settings", { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+
+        if (res.ok && json?.settings) {
+          setSettings(normalizeSettings(json.settings));
+        }
+      } catch {
+        setSettings(DEFAULT_SETTINGS);
+      } finally {
+        setLoadingSettings(false);
+      }
+    }
+
+    loadSettings();
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -66,11 +128,21 @@ export default function CartDrawer() {
   const cartCount = ready ? count() : 0;
   const cartTotal = useMemo(() => Number(total() || 0), [total]);
   const cartEmpty = items.length === 0;
-  const deliveryAmount = cartEmpty ? 0 : DELIVERY_CHARGE;
+  const deliveryAmount = cartEmpty ? 0 : settings.delivery_charge;
   const grandTotal = cartTotal + deliveryAmount;
+  const minimumOrderAmount = Number(settings.minimum_order_amount || 0);
+  const belowMinimum = !cartEmpty && minimumOrderAmount > 0 && cartTotal < minimumOrderAmount;
+  const amountNeeded = Math.max(0, minimumOrderAmount - cartTotal);
 
   async function goToCheckout() {
     if (cartEmpty) return;
+
+    if (belowMinimum) {
+      toast.error(
+        `Minimum order amount is Rs ${formatPKR(minimumOrderAmount)}. Add Rs ${formatPKR(amountNeeded)} more to continue.`
+      );
+      return;
+    }
 
     setCheckingCheckout(true);
 
@@ -80,7 +152,7 @@ export default function CartDrawer() {
       setOpen(false);
 
       if (!data.user) {
-        toast.message("Checkout ke liay login required hai.");
+        toast.message("Please login to continue checkout.");
         router.push("/account/login?next=/checkout");
         return;
       }
@@ -238,8 +310,17 @@ export default function CartDrawer() {
 
                 <div className="mt-2 flex items-center justify-between text-sm text-neutral-600">
                   <span>Delivery Charges</span>
-                  <span>Rs {formatPKR(deliveryAmount)}</span>
+                  <span>
+                    {loadingSettings ? "Loading..." : `Rs ${formatPKR(deliveryAmount)}`}
+                  </span>
                 </div>
+
+                {minimumOrderAmount > 0 ? (
+                  <div className="mt-2 flex items-center justify-between text-sm text-neutral-600">
+                    <span>Minimum Order</span>
+                    <span>Rs {formatPKR(minimumOrderAmount)}</span>
+                  </div>
+                ) : null}
 
                 <div className="mt-3 border-t border-neutral-200 pt-3">
                   <div className="flex items-center justify-between text-lg font-bold text-neutral-950">
@@ -248,6 +329,18 @@ export default function CartDrawer() {
                   </div>
                 </div>
               </div>
+
+              {belowMinimum ? (
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">
+                  Add Rs {formatPKR(amountNeeded)} more to reach the minimum order amount.
+                </div>
+              ) : null}
+
+              {!settings.cod_enabled ? (
+                <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">
+                  Cash on Delivery is currently disabled. Other checkout options may still be available.
+                </div>
+              ) : null}
 
               <div className="mt-4 flex items-center gap-3">
                 <button
@@ -260,9 +353,9 @@ export default function CartDrawer() {
 
                 <button
                   onClick={goToCheckout}
-                  disabled={cartEmpty || checkingCheckout}
+                  disabled={cartEmpty || checkingCheckout || belowMinimum}
                   className={`inline-flex min-h-[48px] flex-1 items-center justify-center rounded-2xl px-4 py-3 text-center text-sm font-semibold transition ${
-                    cartEmpty
+                    cartEmpty || belowMinimum
                       ? "cursor-not-allowed bg-neutral-300 text-white"
                       : "border border-[#a30105]/15 bg-white text-neutral-900 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:border-[#a30105]/25 hover:bg-[#fff7f7]"
                   }`}
