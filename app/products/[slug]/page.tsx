@@ -60,6 +60,15 @@ function truncate(text: string, max = 160) {
   return `${clean.slice(0, max - 1).trim()}…`;
 }
 
+function getShortIntro(product: Product) {
+  const raw = stripHtml(product.description);
+  if (!raw) {
+    return "Original quality product available at Vape Ustad with live website stock and fast COD ordering.";
+  }
+
+  return truncate(raw, 190);
+}
+
 function absoluteUrl(path?: string | null) {
   if (!path) return `${SITE_URL}${DEFAULT_IMAGE}`;
   if (/^https?:\/\//i.test(path)) return path;
@@ -145,8 +154,7 @@ async function loadRelatedProducts(product: Product): Promise<Product[]> {
   return rows
     .filter((x) => x.item_code !== product.item_code)
     .filter((x) => {
-      const sameBrand =
-        product.brand && x.brand && product.brand === x.brand;
+      const sameBrand = product.brand && x.brand && product.brand === x.brand;
       const sameGroup =
         product.item_group && x.item_group && product.item_group === x.item_group;
       return sameBrand || sameGroup;
@@ -280,6 +288,8 @@ export default async function ProductDetail({
   const productImages = getProductImages(p);
   const mainImage = productImages[0] || DEFAULT_IMAGE;
   const productSlug = p.slug || slug;
+  const shortIntro = getShortIntro(p);
+  const fullDescriptionText = stripHtml(p.description);
 
   const ui = {
     id: p.item_code,
@@ -291,7 +301,6 @@ export default async function ProductDetail({
     description: p.description || "",
   };
 
-  const descriptionText = stripHtml(ui.description);
   const metadataDescription = buildProductDescription(p);
   const canonicalUrl = getCanonicalUrl(productSlug);
   const productImageUrls = productImages.map(absoluteUrl);
@@ -355,7 +364,7 @@ export default async function ProductDetail({
           ) : null}
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12">
+        <div className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
           <div className="space-y-4">
             <div className="overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
               <div className="aspect-square w-full overflow-hidden bg-neutral-50">
@@ -363,28 +372,30 @@ export default async function ProductDetail({
                 <img
                   src={mainImage}
                   alt={ui.name}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-3 sm:grid-cols-5">
-              {productImages.slice(0, 8).map((img, idx) => (
-                <div
-                  key={`${img}-${idx}`}
-                  className="overflow-hidden rounded-2xl border border-neutral-200 bg-white"
-                >
-                  <div className="aspect-square bg-neutral-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={img}
-                      alt={`${ui.name} preview ${idx + 1}`}
-                      className="h-full w-full object-cover"
-                    />
+            {productImages.length > 1 ? (
+              <div className="grid grid-cols-4 gap-3 sm:grid-cols-5">
+                {productImages.slice(0, 8).map((img, idx) => (
+                  <div
+                    key={`${img}-${idx}`}
+                    className="overflow-hidden rounded-2xl border border-neutral-200 bg-white"
+                  >
+                    <div className="aspect-square bg-neutral-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img}
+                        alt={`${ui.name} preview ${idx + 1}`}
+                        className="h-full w-full object-contain"
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-col">
@@ -439,23 +450,14 @@ export default async function ProductDetail({
                 </div>
               )}
 
-              {actualStock > 0 || reservedByWebsiteOrders > 0 ? (
-                <div className="mt-2 text-xs text-neutral-500">
-                  Website stock: {actualStock} · Reserved by website orders:{" "}
-                  {reservedByWebsiteOrders}
-                </div>
-              ) : null}
+              <div className="mt-2 text-xs text-neutral-500">
+                Website stock: {actualStock} · Reserved by website orders:{" "}
+                {reservedByWebsiteOrders}
+              </div>
 
-              {descriptionText ? (
-                <p className="mt-6 text-[15px] leading-7 text-neutral-600">
-                  {descriptionText}
-                </p>
-              ) : (
-                <p className="mt-6 text-[15px] leading-7 text-neutral-500">
-                  Premium vaping product from Vape Ustad. Original quality,
-                  carefully selected stock, and a smooth shopping experience.
-                </p>
-              )}
+              <p className="mt-6 text-[15px] leading-7 text-neutral-600">
+                {shortIntro}
+              </p>
 
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 {isOutOfStock ? (
@@ -479,20 +481,39 @@ export default async function ProductDetail({
                 )}
               </div>
             </div>
-
-            {ui.description ? (
-              <div className="mt-6 rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:p-8">
-                <h2 className="mb-4 text-lg font-bold text-neutral-950">
-                  Product Details
-                </h2>
-                <div
-                  className="prose max-w-none prose-p:text-neutral-700 prose-li:text-neutral-700 prose-strong:text-neutral-900"
-                  dangerouslySetInnerHTML={{ __html: ui.description }}
-                />
-              </div>
-            ) : null}
           </div>
         </div>
+
+        {ui.description ? (
+          <div className="mt-10 rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:p-8">
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-vu-red">
+                  Product Information
+                </p>
+                <h2 className="mt-2 text-2xl font-extrabold text-neutral-950">
+                  Product Details
+                </h2>
+              </div>
+
+              <div className="rounded-full border border-neutral-200 bg-neutral-50 px-4 py-2 text-sm font-semibold text-neutral-700">
+                SKU: {p.item_code}
+              </div>
+            </div>
+
+            <div
+              className="prose max-w-none prose-p:text-neutral-700 prose-li:text-neutral-700 prose-strong:text-neutral-900"
+              dangerouslySetInnerHTML={{ __html: ui.description }}
+            />
+
+            {!fullDescriptionText ? (
+              <p className="text-neutral-600">
+                Premium vaping product from Vape Ustad. Original quality,
+                carefully selected stock, and a smooth shopping experience.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {related.length ? (
           <div className="mt-14">
@@ -533,7 +554,7 @@ export default async function ProductDetail({
                       <img
                         src={itemImage}
                         alt={item.item_name}
-                        className="h-56 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                        className="h-56 w-full object-contain transition duration-300 group-hover:scale-[1.03]"
                       />
                     </div>
 
