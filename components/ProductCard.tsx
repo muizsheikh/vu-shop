@@ -2,8 +2,11 @@ import Link from "next/link";
 
 type ProductCardInput = {
   id: string;
-  name: string;
+  name?: string | null;
+  item_name?: string | null;
+  item_code?: string | null;
   image: string | null;
+  images?: string[] | null;
   price: number | null;
   description?: string | null;
   route?: string | null;
@@ -20,6 +23,7 @@ const toSlug = (s: string) =>
     .toString()
     .trim()
     .toLowerCase()
+    .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)+/g, "");
 
@@ -45,21 +49,23 @@ function getAvailabilityMeta(
   if (unavailable) {
     return {
       label: "Unavailable",
-      badgeClassName: "border-red-200/90 bg-white shadow-sm text-red-700",
       statusClassName: "text-red-600",
     };
   }
 
   return {
     label: "Available",
-    badgeClassName: "border-emerald-200/90 bg-white/90 text-emerald-700",
     statusClassName: "text-emerald-600",
   };
 }
 
 export default function ProductCard({ p }: { p: ProductCardInput }) {
-  const slug = p.slug || toSlug(p.name) || toSlug(p.id);
+  const name = p.name || p.item_name || p.item_code || p.id;
+  const slug = p.slug || toSlug(name) || toSlug(p.id);
   const href = normalizeRoute(p.route) || `/products/${slug}`;
+
+  const image =
+    p.image || p.images?.find(Boolean) || "/images/placeholder.png";
 
   const pricePKR =
     p.price != null ? new Intl.NumberFormat("en-PK").format(p.price) : null;
@@ -73,13 +79,12 @@ export default function ProductCard({ p }: { p: ProductCardInput }) {
       className="group block overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-[0_10px_30px_rgba(0,0,0,0.045)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(0,0,0,0.08)]"
     >
       <div className="relative overflow-hidden rounded-t-[24px] bg-[linear-gradient(180deg,#fafafa_0%,#f4f4f4_100%)]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={p.image || "/images/placeholder.png"}
-          alt={p.name}
+          src={image}
+          alt={name}
           className="h-44 w-full object-cover transition duration-500 group-hover:scale-[1.03] sm:h-52 md:h-56"
         />
-
-        
       </div>
 
       <div className="space-y-3 p-3.5 md:p-4">
@@ -101,7 +106,7 @@ export default function ProductCard({ p }: { p: ProductCardInput }) {
 
         <div className="space-y-2">
           <h3 className="line-clamp-2 text-[15px] font-semibold leading-6 text-neutral-900 md:text-base">
-            {p.name}
+            {name}
           </h3>
 
           {cleanDescription ? (

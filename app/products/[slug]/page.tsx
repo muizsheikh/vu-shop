@@ -6,16 +6,28 @@ import AddToCartButton from "./ui";
 
 export const dynamic = "force-dynamic";
 
+type GalleryImage = {
+  image: string;
+  alt_text?: string | null;
+  sort_order?: number | null;
+  is_primary?: boolean;
+};
+
 type Product = {
+  id?: string;
   item_code: string;
   item_name: string;
+  name?: string | null;
   slug?: string | null;
   route?: string | null;
   image: string;
+  images?: string[] | null;
+  gallery?: GalleryImage[] | null;
   price: number | null;
   currency?: string | null;
   description?: string | null;
   stock?: number | null;
+  stock_qty?: number | null;
   in_stock?: boolean;
   brand?: string | null;
   item_group?: string | null;
@@ -93,22 +105,34 @@ async function getBaseUrlFromHeaders() {
 
 async function loadProducts(): Promise<Product[]> {
   const base = await getBaseUrlFromHeaders();
+  const all: Product[] = [];
+  let page = 1;
 
-  const res = await fetch(`${base}/api/products?limit=200`, {
-    cache: "no-store",
-  });
+  while (page <= 20) {
+    const res = await fetch(`${base}/api/products?limit=200&page=${page}`, {
+      cache: "no-store",
+    });
 
-  if (!res.ok) return [];
+    if (!res.ok) break;
 
-  const j = await res.json();
-  return Array.isArray(j?.products) ? j.products : [];
+    const j = await res.json();
+    const rows = Array.isArray(j?.products) ? j.products : [];
+    all.push(...rows);
+
+    const pages = Number(j?.meta?.pages || j?.pages || 1);
+    if (!rows.length || page >= pages) break;
+
+    page += 1;
+  }
+
+  return all;
 }
 
 function findProduct(products: Product[], slug: string) {
   return (
     products.find((x) => x.slug === slug) ||
     products.find((x) => lastSegment(x.route) === slug) ||
-    products.find((x) => toSlug(x.item_name) === slug) ||
+    products.find((x) => toSlug(x.item_name || x.name || x.item_code) === slug) ||
     products.find((x) => toSlug(x.item_code) === slug) ||
     null
   );
@@ -130,6 +154,22 @@ function buildProductDescription(product: Product) {
     `${parts}. Original quality, carefully selected stock, and a smooth shopping experience.`,
     160
   );
+}
+
+function getProductImages(product: Product) {
+  const galleryImages = Array.isArray(product.gallery)
+    ? product.gallery.map((g) => g.image).filter(Boolean)
+    : [];
+
+  const images = Array.isArray(product.images) ? product.images.filter(Boolean) : [];
+
+  const merged = [
+    product.image || DEFAULT_IMAGE,
+    ...galleryImages,
+    ...images,
+  ].filter(Boolean);
+
+  return Array.from(new Set(merged));
 }
 
 export async function generateMetadata({
@@ -158,7 +198,8 @@ export async function generateMetadata({
   const description = buildProductDescription(product);
   const canonical = `/products/${product.slug || slug}`;
   const canonicalUrl = getCanonicalUrl(product.slug || slug);
-  const image = absoluteUrl(product.image || DEFAULT_IMAGE);
+  const images = getProductImages(product).map(absoluteUrl);
+  const image = images[0] || absoluteUrl(DEFAULT_IMAGE);
 
   const titleParts = [product.item_name, product.brand, "Vape Ustad"].filter(Boolean);
   const title = titleParts.join(" | ");
@@ -215,24 +256,27 @@ export default async function ProductDetail({
 
   if (!p) return notFound();
 
-  const stock = Number(p.stock ?? 0);
+  const stock = Number(p.stock ?? p.stock_qty ?? 0);
   const isOutOfStock = p.in_stock === false || stock <= 0;
   const pricePKR = formatPKR(p.price);
   const stockMeta = getStockMeta(stock, isOutOfStock);
+  const productImages = getProductImages(p);
+  const mainImage = productImages[0] || DEFAULT_IMAGE;
 
   const ui = {
     id: p.item_code,
     slug: p.slug || slug,
     name: p.item_name,
     price: p.price ?? 0,
-    image: p.image || DEFAULT_IMAGE,
+    image: mainImage,
+    images: productImages,
     description: p.description || "",
   };
 
   const descriptionText = stripHtml(ui.description);
   const metadataDescription = buildProductDescription(p);
   const canonicalUrl = getCanonicalUrl(ui.slug);
-  const productImage = absoluteUrl(ui.image);
+  const productImageUrls = productImages.map(absoluteUrl);
 
   const related = products
     .filter((x) => x.item_code !== p.item_code)
@@ -250,7 +294,7 @@ export default async function ProductDetail({
     name: ui.name,
     description: metadataDescription,
     sku: p.item_code,
-    image: [productImage],
+    image: productImageUrls.length ? productImageUrls : [absoluteUrl(DEFAULT_IMAGE)],
     brand: p.brand
       ? {
           "@type": "Brand",
@@ -308,7 +352,7 @@ export default async function ProductDetail({
               <div className="aspect-square w-full overflow-hidden bg-neutral-50">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={ui.image}
+                  src={mainImage}
                   alt={ui.name}
                   className="h-full w-full object-cover"
                 />
@@ -316,15 +360,15 @@ export default async function ProductDetail({
             </div>
 
             <div className="grid grid-cols-4 gap-3 sm:grid-cols-5">
-              {Array.from({ length: 4 }).map((_, idx) => (
+              {productImages.slice(0, 8).map((img, idx) => (
                 <div
-                  key={idx}
+                  key={`${img}-${idx}`}
                   className="overflow-hidden rounded-2xl border border-neutral-200 bg-white"
                 >
                   <div className="aspect-square bg-neutral-50">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={ui.image}
+                      src={img}
                       alt={`${ui.name} preview ${idx + 1}`}
                       className="h-full w-full object-cover"
                     />
@@ -418,44 +462,6 @@ export default async function ProductDetail({
                   </>
                 )}
               </div>
-
-              <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-                  <div className="text-sm font-semibold text-neutral-900">
-                    100% Authentic Products
-                  </div>
-                  <div className="mt-1 text-sm text-neutral-600">
-                    Carefully selected stock with trusted product sourcing.
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-                  <div className="text-sm font-semibold text-neutral-900">
-                    Fast Delivery
-                  </div>
-                  <div className="mt-1 text-sm text-neutral-600">
-                    Quick order handling with smooth checkout experience.
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-                  <div className="text-sm font-semibold text-neutral-900">
-                    Cash on Delivery
-                  </div>
-                  <div className="mt-1 text-sm text-neutral-600">
-                    Easy ordering for customers who prefer COD.
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-                  <div className="text-sm font-semibold text-neutral-900">
-                    Secure Checkout
-                  </div>
-                  <div className="mt-1 text-sm text-neutral-600">
-                    Safe checkout flow with clean order confirmation.
-                  </div>
-                </div>
-              </div>
             </div>
 
             {ui.description ? (
@@ -493,50 +499,56 @@ export default async function ProductDetail({
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {related.map((item) => (
-                <Link
-                  key={item.item_code}
-                  href={
-                    item.route || `/products/${item.slug || toSlug(item.item_name)}`
-                  }
-                  className="group overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-[0_12px_35px_rgba(0,0,0,0.05)] transition hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(0,0,0,0.08)]"
-                >
-                  <div className="overflow-hidden bg-neutral-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={item.image || DEFAULT_IMAGE}
-                      alt={item.item_name}
-                      className="h-56 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                    />
-                  </div>
+              {related.map((item) => {
+                const itemImages = getProductImages(item);
+                const itemImage = itemImages[0] || DEFAULT_IMAGE;
 
-                  <div className="p-4">
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      {item.brand ? (
-                        <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-600">
-                          {item.brand}
-                        </span>
-                      ) : null}
-
-                      {item.item_group ? (
-                        <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-600">
-                          {item.item_group}
-                        </span>
-                      ) : null}
+                return (
+                  <Link
+                    key={item.item_code}
+                    href={
+                      item.route ||
+                      `/products/${item.slug || toSlug(item.item_name)}`
+                    }
+                    className="group overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-[0_12px_35px_rgba(0,0,0,0.05)] transition hover:-translate-y-1 hover:shadow-[0_18px_45px_rgba(0,0,0,0.08)]"
+                  >
+                    <div className="overflow-hidden bg-neutral-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={itemImage}
+                        alt={item.item_name}
+                        className="h-56 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                      />
                     </div>
 
-                    <h3 className="line-clamp-2 min-h-[48px] text-base font-semibold text-neutral-900">
-                      {item.item_name}
-                    </h3>
+                    <div className="p-4">
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {item.brand ? (
+                          <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-600">
+                            {item.brand}
+                          </span>
+                        ) : null}
 
-                    <div className="mt-3 font-bold text-vu-red">
-                      {item.price != null
-                        ? `Rs ${formatPKR(item.price)}`
-                        : "Price on request"}
+                        {item.item_group ? (
+                          <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-600">
+                            {item.item_group}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <h3 className="line-clamp-2 min-h-[48px] text-base font-semibold text-neutral-900">
+                        {item.item_name}
+                      </h3>
+
+                      <div className="mt-3 font-bold text-vu-red">
+                        {item.price != null
+                          ? `Rs ${formatPKR(item.price)}`
+                          : "Price on request"}
+                      </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           </div>
         ) : null}

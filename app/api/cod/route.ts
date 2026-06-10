@@ -19,6 +19,10 @@ const DEFAULT_ORDER_SETTINGS = {
   cod_enabled: true,
 };
 
+const WEBSITE_WAREHOUSE = (process.env.WEBSITE_WAREHOUSE || "Website Stock - VU").trim();
+const WEBSITE_COST_CENTER = (process.env.WEBSITE_COST_CENTER || "Website - VU").trim();
+const PRICE_LIST = (process.env.ERP_PRICE_LIST || "Standard Selling").trim();
+
 const PREFERRED_CUSTOMER_GROUPS = [
   process.env.ERP_CUSTOMER_GROUP || "",
   "Website Customers",
@@ -48,6 +52,14 @@ function getEnv() {
     throw new Error(
       "ERP credentials missing (ERP_BASE_URL, ERP_API_KEY, ERP_API_SECRET)"
     );
+  }
+
+  if (!WEBSITE_WAREHOUSE) {
+    throw new Error("WEBSITE_WAREHOUSE env missing");
+  }
+
+  if (!WEBSITE_COST_CENTER) {
+    throw new Error("WEBSITE_COST_CENTER env missing");
   }
 
   return { ERP_BASE_URL, ERP_API_KEY, ERP_API_SECRET };
@@ -147,14 +159,13 @@ function sanitizeItemName(value: unknown) {
 
 function cleanMoney(value: unknown, fallback = 0) {
   const number = Number(value ?? fallback);
-
   if (!Number.isFinite(number)) return fallback;
-
   return Math.max(0, Math.round(number));
 }
 
 type IncomingCartItem = {
   item_code?: string;
+  id?: string;
   name?: string;
   qty?: number;
   price?: number;
@@ -182,8 +193,8 @@ function normalizeCartItems(rawItems: unknown): NormalizedCartItem[] {
   const items: NormalizedCartItem[] = [];
 
   for (const raw of rawItems as IncomingCartItem[]) {
-    const item_code = sanitizeItemCode(raw?.item_code);
-    const item_name = sanitizeItemName(raw?.name);
+    const item_code = sanitizeItemCode(raw?.item_code || raw?.id);
+    const item_name = sanitizeItemName(raw?.name || item_code);
     const qty = sanitizeQty(raw?.qty);
     const rate = sanitizeRate(raw?.price);
 
@@ -231,7 +242,6 @@ async function getOrderSettings(): Promise<OrderSettings> {
   };
 }
 
-/* ---------- Dynamic ERP link resolution ---------- */
 async function getDoctypeList(
   doctype: string,
   fields: string[] = ["name"],
@@ -299,7 +309,6 @@ async function getResolvedTerritory() {
   return territoryCache;
 }
 
-/* ---------- Customer ---------- */
 async function findCustomerByEmail(email: string) {
   const filters = enc([["email_id", "=", email]]);
   const fields = enc(["name", "customer_name", "mobile_no"]);
@@ -378,7 +387,6 @@ async function ensureCustomer(input: {
   return created.name as string;
 }
 
-/* ---------- Address ---------- */
 async function findShippingAddress(input: {
   customerId: string;
   address_line1: string;
@@ -475,6 +483,8 @@ function buildSalesOrderItems(items: NormalizedCartItem[], deliveryCharge: numbe
     qty: it.qty,
     rate: it.rate,
     description: it.item_name,
+    warehouse: WEBSITE_WAREHOUSE,
+    cost_center: WEBSITE_COST_CENTER,
   }));
 
   if (deliveryCharge <= 0) {
@@ -488,6 +498,7 @@ function buildSalesOrderItems(items: NormalizedCartItem[], deliveryCharge: numbe
       qty: 1,
       rate: deliveryCharge,
       description: DELIVERY_ITEM_NAME,
+      cost_center: WEBSITE_COST_CENTER,
     },
   ];
 }
@@ -508,6 +519,9 @@ function buildOrderRemarks(
 
   return [
     "Website COD Order",
+    "",
+    `Warehouse: ${WEBSITE_WAREHOUSE}`,
+    `Cost Center: ${WEBSITE_COST_CENTER}`,
     "",
     `Customer: ${customer.name}`,
     `Email: ${customer.email}`,
@@ -541,7 +555,8 @@ export async function POST(req: Request) {
     if (!settings.cod_enabled) {
       return NextResponse.json(
         {
-          error: "Cash on Delivery is currently disabled. Please choose another payment method.",
+          error:
+            "Cash on Delivery is currently disabled. Please choose another payment method.",
         },
         { status: 403 }
       );
@@ -550,7 +565,10 @@ export async function POST(req: Request) {
     const items = normalizeCartItems(body?.items);
     const productTotal = items.reduce((sum, item) => sum + item.amount, 0);
 
-    if (settings.minimum_order_amount > 0 && productTotal < settings.minimum_order_amount) {
+    if (
+      settings.minimum_order_amount > 0 &&
+      productTotal < settings.minimum_order_amount
+    ) {
       return NextResponse.json(
         {
           error: `Minimum order amount is Rs ${settings.minimum_order_amount.toLocaleString()}. Please add more items to continue.`,
@@ -606,6 +624,9 @@ export async function POST(req: Request) {
       delivery_date: getTomorrowDate(),
       currency: DEFAULT_CURRENCY,
       conversion_rate: 1,
+      selling_price_list: PRICE_LIST,
+      set_warehouse: WEBSITE_WAREHOUSE,
+      cost_center: WEBSITE_COST_CENTER,
       items: buildSalesOrderItems(items, settings.delivery_charge),
       remarks: buildOrderRemarks(
         items,
@@ -637,6 +658,8 @@ export async function POST(req: Request) {
         minimum_order_amount: settings.minimum_order_amount,
         cod_enabled: settings.cod_enabled,
       },
+      warehouse: WEBSITE_WAREHOUSE,
+      cost_center: WEBSITE_COST_CENTER,
     });
   } catch (err: any) {
     console.error("POST /api/cod failed:", err);
