@@ -49,20 +49,12 @@ const GALLERY_FIELDS = [
   "is_primary",
 ];
 
-const SALES_ORDER_ITEM_FIELDS = [
-  "parent",
-  "item_code",
-  "qty",
-  "delivered_qty",
-  "warehouse",
-  "docstatus",
-];
-
 const SALES_ORDER_FIELDS = [
   "name",
   "status",
   "docstatus",
   "cost_center",
+  "set_warehouse",
 ];
 
 function assertEnv() {
@@ -115,12 +107,10 @@ type ERPGalleryRow = {
 };
 
 type ERPSalesOrderItem = {
-  parent?: string | null;
   item_code?: string | null;
   qty?: number | string | null;
   delivered_qty?: number | string | null;
   warehouse?: string | null;
-  docstatus?: 0 | 1 | 2;
 };
 
 type ERPSalesOrder = {
@@ -128,6 +118,11 @@ type ERPSalesOrder = {
   status?: string | null;
   docstatus?: 0 | 1 | 2;
   cost_center?: string | null;
+  set_warehouse?: string | null;
+};
+
+type ERPSalesOrderFull = ERPSalesOrder & {
+  items?: ERPSalesOrderItem[];
 };
 
 type GalleryImage = {
@@ -281,6 +276,19 @@ async function erpResourceList<T>(
   return Array.isArray(json?.data) ? (json.data as T[]) : [];
 }
 
+async function erpResourceGet<T>(doctype: string, name: string): Promise<T | null> {
+  const res = await fetch(
+    buildApiUrl(`/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`),
+    {
+      headers: authHeaders(),
+      cache: "no-store",
+    }
+  );
+
+  const json = await safeJson(res);
+  return json?.data ? (json.data as T) : null;
+}
+
 async function erpResourceListSafeFields<T>(
   doctype: string,
   opts: {
@@ -383,94 +391,100 @@ async function loadGalleryMap(itemCodes: string[]) {
   return map;
 }
 
+function isOpenWebsiteSalesOrder(so: ERPSalesOrder) {
+  const name = sanitizeString(so.name);
+  const status = sanitizeString(so.status).toLowerCase();
+  const docstatus = toNumber(so.docstatus, 0);
+
+  if (!name) return false;
+  if (docstatus === 2) return false;
+
+  if (["cancelled", "closed", "completed"].includes(status)) {
+    return false;
+  }
+
+  if (WEBSITE_COST_CENTER) {
+    const soCostCenter = sanitizeString(so.cost_center);
+    if (soCostCenter && soCostCenter !== WEBSITE_COST_CENTER) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function loadOpenWebsiteSalesOrders() {
+  const rows: ERPSalesOrder[] = [];
+  const pageSize = 500;
+
+  for (let start = 0; start < 5000; start += pageSize) {
+    const filters: any[] = [["docstatus", "in", [0, 1]]];
+
+    if (WEBSITE_COST_CENTER) {
+      filters.push(["cost_center", "=", WEBSITE_COST_CENTER]);
+    }
+
+    const result = await erpResourceListSafeFields<ERPSalesOrder>("Sales Order", {
+      fields: SALES_ORDER_FIELDS,
+      required_fields: ["name"],
+      filters,
+      order_by: "modified desc",
+      limit_page_length: pageSize,
+      limit_start: start,
+    });
+
+    const pageRows = result.rows.filter(isOpenWebsiteSalesOrder);
+    rows.push(...pageRows);
+
+    if (result.rows.length < pageSize) break;
+  }
+
+  return rows;
+}
+
 async function loadWebsiteOpenOrderQtyMap(itemCodes: string[]) {
   const reservedMap = new Map<string, number>();
 
   if (!itemCodes.length) return reservedMap;
 
-  const allOrderItemRows: ERPSalesOrderItem[] = [];
-  const parentNames = new Set<string>();
+  const itemCodeSet = new Set(itemCodes);
+  const openOrders = await loadOpenWebsiteSalesOrders();
 
-  for (const part of chunk(itemCodes, 100)) {
-    const result = await erpResourceListSafeFields<ERPSalesOrderItem>("Sales Order Item", {
-      fields: SALES_ORDER_ITEM_FIELDS,
-      required_fields: ["parent", "item_code", "qty"],
-      filters: [
-        ["item_code", "in", part],
-        ["warehouse", "=", WEBSITE_WAREHOUSE],
-        ["docstatus", "in", [0, 1]],
-      ],
-      limit_page_length: 5000,
-    });
+  if (!openOrders.length) return reservedMap;
 
-    for (const row of result.rows) {
-      const parent = sanitizeString(row.parent);
-      const itemCode = sanitizeString(row.item_code);
+  for (const part of chunk(openOrders, 20)) {
+    const fullOrders = await Promise.all(
+      part.map((so) => {
+        const name = sanitizeString(so.name);
+        return name ? erpResourceGet<ERPSalesOrderFull>("Sales Order", name) : Promise.resolve(null);
+      })
+    );
 
-      if (!parent || !itemCode) continue;
+    for (const so of fullOrders) {
+      if (!so || !isOpenWebsiteSalesOrder(so)) continue;
 
-      allOrderItemRows.push(row);
-      parentNames.add(parent);
-    }
-  }
+      const parentWarehouse = sanitizeString(so.set_warehouse);
+      const items = Array.isArray(so.items) ? so.items : [];
 
-  if (!parentNames.size || !allOrderItemRows.length) {
-    return reservedMap;
-  }
+      for (const row of items) {
+        const itemCode = sanitizeString(row.item_code);
+        if (!itemCode || !itemCodeSet.has(itemCode)) continue;
 
-  const openParents = new Set<string>();
+        const rowWarehouse = sanitizeString(row.warehouse) || parentWarehouse;
 
-  for (const part of chunk(Array.from(parentNames), 100)) {
-    const result = await erpResourceListSafeFields<ERPSalesOrder>("Sales Order", {
-      fields: SALES_ORDER_FIELDS,
-      required_fields: ["name"],
-      filters: [
-        ["name", "in", part],
-        ["docstatus", "in", [0, 1]],
-      ],
-      limit_page_length: 1000,
-    });
+        if (rowWarehouse && rowWarehouse !== WEBSITE_WAREHOUSE) {
+          continue;
+        }
 
-    const fieldsUsed = result.fieldsUsed;
+        const orderedQty = Math.max(toNumber(row.qty, 0), 0);
+        const deliveredQty = Math.max(toNumber(row.delivered_qty, 0), 0);
+        const pendingQty = Math.max(orderedQty - deliveredQty, 0);
 
-    for (const so of result.rows) {
-      const name = sanitizeString(so.name);
-      const status = sanitizeString(so.status).toLowerCase();
-      const docstatus = toNumber(so.docstatus, 0);
+        if (pendingQty <= 0) continue;
 
-      if (!name) continue;
-      if (docstatus === 2) continue;
-
-      if (["cancelled", "closed", "completed"].includes(status)) {
-        continue;
+        reservedMap.set(itemCode, (reservedMap.get(itemCode) || 0) + pendingQty);
       }
-
-      if (
-        WEBSITE_COST_CENTER &&
-        fieldsUsed.has("cost_center") &&
-        sanitizeString(so.cost_center) &&
-        sanitizeString(so.cost_center) !== WEBSITE_COST_CENTER
-      ) {
-        continue;
-      }
-
-      openParents.add(name);
     }
-  }
-
-  for (const row of allOrderItemRows) {
-    const parent = sanitizeString(row.parent);
-    const itemCode = sanitizeString(row.item_code);
-
-    if (!parent || !itemCode || !openParents.has(parent)) continue;
-
-    const orderedQty = Math.max(toNumber(row.qty, 0), 0);
-    const deliveredQty = Math.max(toNumber(row.delivered_qty, 0), 0);
-    const pendingQty = Math.max(orderedQty - deliveredQty, 0);
-
-    if (pendingQty <= 0) continue;
-
-    reservedMap.set(itemCode, (reservedMap.get(itemCode) || 0) + pendingQty);
   }
 
   return reservedMap;
