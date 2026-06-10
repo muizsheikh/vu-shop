@@ -28,9 +28,12 @@ type Product = {
   description?: string | null;
   stock?: number | null;
   stock_qty?: number | null;
+  actual_stock_qty?: number | null;
+  reserved_by_website_orders?: number | null;
   in_stock?: boolean;
   brand?: string | null;
   item_group?: string | null;
+  category?: string | null;
 };
 
 const SITE_NAME = "Vape Ustad";
@@ -45,9 +48,6 @@ const toSlug = (s: string) =>
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)+/g, "");
-
-const lastSegment = (p?: string | null) =>
-  (p || "").split("/").filter(Boolean).pop() || "";
 
 function stripHtml(html?: string | null) {
   if (!html) return "";
@@ -103,39 +103,55 @@ async function getBaseUrlFromHeaders() {
   return `${proto}://${host}`;
 }
 
-async function loadProducts(): Promise<Product[]> {
+async function loadProduct(slug: string): Promise<Product | null> {
   const base = await getBaseUrlFromHeaders();
-  const all: Product[] = [];
-  let page = 1;
 
-  while (page <= 20) {
-    const res = await fetch(`${base}/api/products?limit=200&page=${page}`, {
+  const res = await fetch(
+    `${base}/api/products?slug=${encodeURIComponent(slug)}&include_unavailable=1&limit=1`,
+    {
       cache: "no-store",
-    });
+    }
+  );
 
-    if (!res.ok) break;
+  if (!res.ok) return null;
 
-    const j = await res.json();
-    const rows = Array.isArray(j?.products) ? j.products : [];
-    all.push(...rows);
+  const j = await res.json();
 
-    const pages = Number(j?.meta?.pages || j?.pages || 1);
-    if (!rows.length || page >= pages) break;
+  if (j?.product) return j.product as Product;
 
-    page += 1;
-  }
-
-  return all;
+  const rows = Array.isArray(j?.products) ? j.products : [];
+  return rows[0] || null;
 }
 
-function findProduct(products: Product[], slug: string) {
-  return (
-    products.find((x) => x.slug === slug) ||
-    products.find((x) => lastSegment(x.route) === slug) ||
-    products.find((x) => toSlug(x.item_name || x.name || x.item_code) === slug) ||
-    products.find((x) => toSlug(x.item_code) === slug) ||
-    null
-  );
+async function loadRelatedProducts(product: Product): Promise<Product[]> {
+  const base = await getBaseUrlFromHeaders();
+  const params = new URLSearchParams();
+
+  params.set("limit", "8");
+
+  if (product.item_group) {
+    params.set("group", product.item_group);
+  }
+
+  const res = await fetch(`${base}/api/products?${params.toString()}`, {
+    cache: "no-store",
+  });
+
+  if (!res.ok) return [];
+
+  const j = await res.json();
+  const rows = Array.isArray(j?.products) ? (j.products as Product[]) : [];
+
+  return rows
+    .filter((x) => x.item_code !== product.item_code)
+    .filter((x) => {
+      const sameBrand =
+        product.brand && x.brand && product.brand === x.brand;
+      const sameGroup =
+        product.item_group && x.item_group && product.item_group === x.item_group;
+      return sameBrand || sameGroup;
+    })
+    .slice(0, 4);
 }
 
 function buildProductDescription(product: Product) {
@@ -178,8 +194,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const products = await loadProducts();
-  const product = findProduct(products, slug);
+  const product = await loadProduct(slug);
 
   if (!product) {
     return {
@@ -196,8 +211,9 @@ export async function generateMetadata({
   }
 
   const description = buildProductDescription(product);
-  const canonical = `/products/${product.slug || slug}`;
-  const canonicalUrl = getCanonicalUrl(product.slug || slug);
+  const productSlug = product.slug || slug;
+  const canonical = `/products/${productSlug}`;
+  const canonicalUrl = getCanonicalUrl(productSlug);
   const images = getProductImages(product).map(absoluteUrl);
   const image = images[0] || absoluteUrl(DEFAULT_IMAGE);
 
@@ -214,6 +230,7 @@ export async function generateMetadata({
       product.item_name,
       product.brand || "",
       product.item_group || "",
+      product.category || "",
       "vape",
       "vape pakistan",
       "vape ustad",
@@ -250,22 +267,23 @@ export default async function ProductDetail({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const products = await loadProducts();
-
-  const p = findProduct(products, slug);
+  const p = await loadProduct(slug);
 
   if (!p) return notFound();
 
   const stock = Number(p.stock ?? p.stock_qty ?? 0);
+  const actualStock = Number(p.actual_stock_qty ?? stock);
+  const reservedByWebsiteOrders = Number(p.reserved_by_website_orders ?? 0);
   const isOutOfStock = p.in_stock === false || stock <= 0;
   const pricePKR = formatPKR(p.price);
   const stockMeta = getStockMeta(stock, isOutOfStock);
   const productImages = getProductImages(p);
   const mainImage = productImages[0] || DEFAULT_IMAGE;
+  const productSlug = p.slug || slug;
 
   const ui = {
     id: p.item_code,
-    slug: p.slug || slug,
+    slug: productSlug,
     name: p.item_name,
     price: p.price ?? 0,
     image: mainImage,
@@ -275,18 +293,9 @@ export default async function ProductDetail({
 
   const descriptionText = stripHtml(ui.description);
   const metadataDescription = buildProductDescription(p);
-  const canonicalUrl = getCanonicalUrl(ui.slug);
+  const canonicalUrl = getCanonicalUrl(productSlug);
   const productImageUrls = productImages.map(absoluteUrl);
-
-  const related = products
-    .filter((x) => x.item_code !== p.item_code)
-    .filter((x) => {
-      const sameBrand = p.brand && x.brand && p.brand === x.brand;
-      const sameGroup =
-        p.item_group && x.item_group && p.item_group === x.item_group;
-      return sameBrand || sameGroup;
-    })
-    .slice(0, 4);
+  const related = await loadRelatedProducts(p);
 
   const productJsonLd = {
     "@context": "https://schema.org",
@@ -301,7 +310,7 @@ export default async function ProductDetail({
           name: p.brand,
         }
       : undefined,
-    category: p.item_group || undefined,
+    category: p.item_group || p.category || undefined,
     url: canonicalUrl,
     offers: {
       "@type": "Offer",
@@ -429,6 +438,13 @@ export default async function ProductDetail({
                   This item is currently unavailable.
                 </div>
               )}
+
+              {actualStock > 0 || reservedByWebsiteOrders > 0 ? (
+                <div className="mt-2 text-xs text-neutral-500">
+                  Website stock: {actualStock} · Reserved by website orders:{" "}
+                  {reservedByWebsiteOrders}
+                </div>
+              ) : null}
 
               {descriptionText ? (
                 <p className="mt-6 text-[15px] leading-7 text-neutral-600">

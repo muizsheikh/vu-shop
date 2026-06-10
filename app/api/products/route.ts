@@ -19,8 +19,8 @@ const ERP_BASE = normBase(process.env.ERP_BASE_URL || "");
 const ERP_KEY = (process.env.ERP_API_KEY || "").trim();
 const ERP_SECRET = (process.env.ERP_API_SECRET || "").trim();
 const PRICE_LIST = (process.env.ERP_PRICE_LIST || "Standard Selling").trim();
-const WEBSITE_WAREHOUSE = (process.env.WEBSITE_WAREHOUSE || "").trim();
-const WEBSITE_COST_CENTER = (process.env.WEBSITE_COST_CENTER || "").trim();
+const WEBSITE_WAREHOUSE = (process.env.WEBSITE_WAREHOUSE || "Website Stock - VU").trim();
+const WEBSITE_COST_CENTER = (process.env.WEBSITE_COST_CENTER || "Website - VU").trim();
 const STRICT_PUBLISH = (process.env.VU_STRICT_PUBLISH || "1").trim() === "1";
 const PLACEHOLDER_IMAGE = "/images/placeholder.png";
 
@@ -39,6 +39,12 @@ const ITEM_OPTIONAL_FIELDS = [
   "custom_homepage_section",
   "custom_homepage_sort_order",
   "vu_show_in_website",
+  "web_long_description",
+  "website_description",
+  "short_description",
+  "website_image",
+  "route",
+  "thumbnail",
 ];
 
 const GALLERY_FIELDS = [
@@ -85,6 +91,12 @@ type ERPItem = {
   custom_homepage_sort_order?: number | null;
   disabled?: 0 | 1;
   vu_show_in_website?: 0 | 1;
+  web_long_description?: string | null;
+  website_description?: string | null;
+  short_description?: string | null;
+  website_image?: string | null;
+  route?: string | null;
+  thumbnail?: string | null;
 };
 
 type ERPItemPrice = {
@@ -213,6 +225,10 @@ function toSlug(s: string) {
     .replace(/(^-|-$)+/g, "");
 }
 
+function lastSegment(p?: string | null) {
+  return (p || "").split("/").filter(Boolean).pop() || "";
+}
+
 function sanitizeString(value: unknown, fallback = "") {
   return typeof value === "string" ? value.trim() || fallback : fallback;
 }
@@ -231,6 +247,10 @@ function parsePositiveNumber(value: string | null) {
 function parseInteger(value: string | null, fallback: number) {
   const n = Number.parseInt(value || "", 10);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function parseBoolean(value: string | null) {
+  return value === "1" || value === "true" || value === "yes";
 }
 
 function buildApiUrl(path: string, params?: Record<string, string>) {
@@ -308,7 +328,7 @@ async function erpResourceListSafeFields<T>(
   const dropped = new Set<string>();
   const required = new Set(opts.required_fields || []);
 
-  for (let attempt = 0; attempt < 20; attempt++) {
+  for (let attempt = 0; attempt < 25; attempt++) {
     try {
       const rows = await erpResourceList<T>(doctype, {
         fields,
@@ -504,6 +524,51 @@ function matchesSearch(p: Product, q: string) {
   );
 }
 
+function matchesSlugOrCode(p: Product, value: string) {
+  if (!value) return true;
+
+  const target = value.trim().toLowerCase();
+
+  return (
+    p.item_code.toLowerCase() === target ||
+    p.item_name.toLowerCase() === target ||
+    p.slug.toLowerCase() === target ||
+    lastSegment(p.route).toLowerCase() === target ||
+    toSlug(p.item_code) === target ||
+    toSlug(p.item_name) === target
+  );
+}
+
+function getBestDescription(it: ERPItem, fieldsUsed: Set<string>) {
+  const candidates = [
+    fieldsUsed.has("web_long_description") ? it.web_long_description : "",
+    fieldsUsed.has("website_description") ? it.website_description : "",
+    it.description,
+    fieldsUsed.has("short_description") ? it.short_description : "",
+  ];
+
+  for (const c of candidates) {
+    const text = sanitizeString(c);
+    if (text) return text;
+  }
+
+  return "";
+}
+
+function getBestItemImage(it: ERPItem, fieldsUsed: Set<string>) {
+  const candidates = [
+    fieldsUsed.has("website_image") ? it.website_image : "",
+    it.image,
+    fieldsUsed.has("thumbnail") ? it.thumbnail : "",
+  ];
+
+  for (const c of candidates) {
+    if (c && !isPrivatePath(c)) return resolveAbsolute(c);
+  }
+
+  return null;
+}
+
 export async function GET(req: Request) {
   try {
     assertEnv();
@@ -515,6 +580,9 @@ export async function GET(req: Request) {
     const category = sanitizeString(url.searchParams.get("category"));
     const homepageSection = sanitizeString(url.searchParams.get("homepage_section"));
     const q = sanitizeString(url.searchParams.get("q"));
+    const slug = sanitizeString(url.searchParams.get("slug"));
+    const itemCode = sanitizeString(url.searchParams.get("item_code") || url.searchParams.get("code"));
+    const includeUnavailable = parseBoolean(url.searchParams.get("include_unavailable")) || Boolean(slug || itemCode);
     const minPrice = parsePositiveNumber(url.searchParams.get("min_price"));
     const maxPrice = parsePositiveNumber(url.searchParams.get("max_price"));
     const sort = sanitizeString(url.searchParams.get("sort"));
@@ -529,6 +597,7 @@ export async function GET(req: Request) {
       filters.push(["vu_show_in_website", "=", 1]);
     }
 
+    if (itemCode) filters.push(["item_code", "=", itemCode]);
     if (brand) filters.push(["brand", "=", brand]);
     if (group) filters.push(["item_group", "=", group]);
     if (category) filters.push(["custom_website_category", "=", category]);
@@ -539,7 +608,7 @@ export async function GET(req: Request) {
       required_fields: ["item_code"],
       filters,
       order_by: "item_name asc",
-      limit_page_length: 2000,
+      limit_page_length: itemCode ? 1 : 2000,
     });
 
     const items = itemResult.rows;
@@ -548,6 +617,7 @@ export async function GET(req: Request) {
     if (!items.length) {
       return NextResponse.json({
         products: [],
+        product: null,
         meta: {
           page,
           limit,
@@ -599,7 +669,7 @@ export async function GET(req: Request) {
 
     let products: Product[] = items.map((it) => {
       const itemName = sanitizeString(it.item_name, it.item_code);
-      const slug = toSlug(itemName || it.item_code);
+      const slugValue = toSlug(itemName || it.item_code);
 
       const actualStock = Math.max(stockMap.get(it.item_code) ?? 0, 0);
       const reservedByWebsiteOrders = Math.max(websiteReservedMap.get(it.item_code) ?? 0, 0);
@@ -608,7 +678,7 @@ export async function GET(req: Request) {
       const priceRow = priceMap.get(it.item_code);
       const price = priceRow ? Number(priceRow.price_list_rate) : null;
 
-      const rawItemImage = it.image && !isPrivatePath(it.image) ? resolveAbsolute(it.image) : null;
+      const rawItemImage = getBestItemImage(it, itemFieldsUsed);
       const gallery = galleryMap.get(it.item_code) || [];
 
       const firstGalleryImage = gallery[0]?.image || null;
@@ -620,13 +690,14 @@ export async function GET(req: Request) {
 
       const homepageSortRaw = Number(it.custom_homepage_sort_order);
       const homepageSort = Number.isFinite(homepageSortRaw) ? homepageSortRaw : null;
+      const erpRoute = itemFieldsUsed.has("route") ? sanitizeString(it.route) : "";
 
       return {
         id: it.item_code,
         name: itemName,
         item_code: it.item_code,
         item_name: itemName,
-        description: sanitizeString(it.description),
+        description: getBestDescription(it, itemFieldsUsed),
         image: mainImage,
         images,
         gallery,
@@ -649,13 +720,23 @@ export async function GET(req: Request) {
         homepage_sort_order: itemFieldsUsed.has("custom_homepage_sort_order")
           ? homepageSort
           : null,
-        slug,
-        route: `/products/${slug}`,
+        slug: slugValue,
+        route: erpRoute || `/products/${slugValue}`,
         in_stock: availableStock > 0,
       };
     });
 
-    products = products.filter((p) => p.stock_qty > 0);
+    if (slug) {
+      products = products.filter((p) => matchesSlugOrCode(p, slug));
+    }
+
+    if (itemCode) {
+      products = products.filter((p) => p.item_code === itemCode);
+    }
+
+    if (!includeUnavailable) {
+      products = products.filter((p) => p.stock_qty > 0);
+    }
 
     if (category && itemFieldsUsed.has("custom_website_category")) {
       products = products.filter((p) => p.category === category);
@@ -718,6 +799,7 @@ export async function GET(req: Request) {
     return NextResponse.json(
       {
         products: paged,
+        product: slug || itemCode ? products[0] || null : null,
         meta: {
           page,
           limit,
@@ -727,6 +809,8 @@ export async function GET(req: Request) {
           cost_center: WEBSITE_COST_CENTER,
           price_list: PRICE_LIST,
           stock_mode: "actual_qty_minus_open_website_sales_orders",
+          include_unavailable: includeUnavailable,
+          detail_mode: Boolean(slug || itemCode),
           dropped_fields: Array.from(itemResult.fieldsDropped),
           filters: {
             brand,
@@ -734,6 +818,8 @@ export async function GET(req: Request) {
             category,
             homepage_section: homepageSection,
             q,
+            slug,
+            item_code: itemCode,
             min_price: minPrice,
             max_price: maxPrice,
             sort,
