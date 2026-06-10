@@ -23,6 +23,31 @@ const WEBSITE_WAREHOUSE = (process.env.WEBSITE_WAREHOUSE || "").trim();
 const STRICT_PUBLISH = (process.env.VU_STRICT_PUBLISH || "1").trim() === "1";
 const PLACEHOLDER_IMAGE = "/images/placeholder.png";
 
+const ITEM_BASE_FIELDS = [
+  "item_code",
+  "item_name",
+  "image",
+  "item_group",
+  "brand",
+  "description",
+  "disabled",
+];
+
+const ITEM_OPTIONAL_FIELDS = [
+  "custom_website_category",
+  "custom_homepage_section",
+  "custom_homepage_sort_order",
+  "vu_show_in_website",
+];
+
+const GALLERY_FIELDS = [
+  "parent",
+  "image",
+  "alt_text",
+  "sort_order",
+  "is_primary",
+];
+
 function assertEnv() {
   if (!ERP_BASE || !ERP_KEY || !ERP_SECRET) {
     throw new Error("ERP env missing");
@@ -111,14 +136,30 @@ function chunk<T>(arr: T[], size = 100) {
 async function safeJson(res: Response) {
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status}: ${txt.slice(0, 400)}`);
+    throw new Error(`HTTP ${res.status}: ${txt.slice(0, 700)}`);
   }
 
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) return res.json();
 
   const txt = await res.text();
-  throw new Error(`Non JSON response: ${txt.slice(0, 400)}`);
+  throw new Error(`Non JSON response: ${txt.slice(0, 700)}`);
+}
+
+function extractBadQueryField(err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err || "");
+  const match = msg.match(/Field not permitted in query:\s*([A-Za-z0-9_]+)/i);
+  return match?.[1] || null;
+}
+
+function filterUsesField(filter: any, fieldname: string): boolean {
+  if (!Array.isArray(filter)) return false;
+  return filter.some((part) => part === fieldname);
+}
+
+function removeFiltersUsingField(filters: any[] | undefined, fieldname: string) {
+  if (!Array.isArray(filters)) return filters;
+  return filters.filter((f) => !filterUsesField(f, fieldname));
 }
 
 function resolveAbsolute(raw?: string | null) {
@@ -200,40 +241,103 @@ async function erpResourceList<T>(
   return Array.isArray(json?.data) ? (json.data as T[]) : [];
 }
 
-async function loadGalleryMap(itemCodes: string[]) {
-  const map = new Map<string, GalleryImage[]>();
+async function erpResourceListSafeFields<T>(
+  doctype: string,
+  opts: {
+    fields: string[];
+    filters?: any[];
+    or_filters?: any[];
+    order_by?: string;
+    limit_page_length?: number;
+    limit_start?: number;
+    required_fields?: string[];
+  }
+): Promise<{ rows: T[]; fieldsUsed: Set<string>; fieldsDropped: Set<string> }> {
+  let fields = [...opts.fields];
+  let filters = opts.filters ? [...opts.filters] : undefined;
+  let orFilters = opts.or_filters ? [...opts.or_filters] : undefined;
+  let orderBy = opts.order_by;
+  const dropped = new Set<string>();
+  const required = new Set(opts.required_fields || []);
 
-  for (const part of chunk(itemCodes, 100)) {
-    const rows = await erpResourceList<ERPGalleryRow>("VU Item Gallery Image", {
-      fields: ["parent", "image", "alt_text", "sort_order", "is_primary"],
-      filters: [["parent", "in", part]],
-      order_by: "sort_order asc, idx asc",
-      limit_page_length: 1000,
-    });
-
-    for (const row of rows) {
-      const parent = sanitizeString(row.parent);
-      const abs = resolveAbsolute(row.image);
-
-      if (!parent || !abs || isPrivatePath(row.image)) continue;
-
-      const current = map.get(parent) || [];
-      current.push({
-        image: abs,
-        alt_text: sanitizeString(row.alt_text),
-        sort_order: Number(row.sort_order || 0),
-        is_primary: row.is_primary === 1,
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      const rows = await erpResourceList<T>(doctype, {
+        fields,
+        filters,
+        or_filters: orFilters,
+        order_by: orderBy,
+        limit_page_length: opts.limit_page_length,
+        limit_start: opts.limit_start,
       });
-      map.set(parent, current);
+
+      return {
+        rows,
+        fieldsUsed: new Set(fields),
+        fieldsDropped: dropped,
+      };
+    } catch (err) {
+      const badField = extractBadQueryField(err);
+
+      if (!badField || required.has(badField)) {
+        throw err;
+      }
+
+      dropped.add(badField);
+      fields = fields.filter((field) => field !== badField);
+      filters = removeFiltersUsingField(filters, badField);
+      orFilters = removeFiltersUsingField(orFilters, badField);
+
+      if (orderBy && orderBy.includes(badField)) {
+        orderBy = undefined;
+      }
+
+      console.warn(`${doctype}: dropped unavailable ERP field "${badField}" and retried query`);
     }
   }
 
-  for (const [key, rows] of map.entries()) {
-    rows.sort((a, b) => {
-      if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
-      return a.sort_order - b.sort_order;
-    });
-    map.set(key, rows);
+  throw new Error(`${doctype}: too many field retry attempts`);
+}
+
+async function loadGalleryMap(itemCodes: string[]) {
+  const map = new Map<string, GalleryImage[]>();
+
+  try {
+    for (const part of chunk(itemCodes, 100)) {
+      const result = await erpResourceListSafeFields<ERPGalleryRow>("VU Item Gallery Image", {
+        fields: GALLERY_FIELDS,
+        required_fields: ["parent", "image"],
+        filters: [["parent", "in", part]],
+        order_by: "sort_order asc, idx asc",
+        limit_page_length: 1000,
+      });
+
+      for (const row of result.rows) {
+        const parent = sanitizeString(row.parent);
+        const abs = resolveAbsolute(row.image);
+
+        if (!parent || !abs || isPrivatePath(row.image)) continue;
+
+        const current = map.get(parent) || [];
+        current.push({
+          image: abs,
+          alt_text: sanitizeString(row.alt_text),
+          sort_order: Number(row.sort_order || 0),
+          is_primary: row.is_primary === 1,
+        });
+        map.set(parent, current);
+      }
+    }
+
+    for (const [key, rows] of map.entries()) {
+      rows.sort((a, b) => {
+        if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
+        return a.sort_order - b.sort_order;
+      });
+      map.set(key, rows);
+    }
+  } catch (err) {
+    console.warn("Gallery load skipped:", err);
   }
 
   return map;
@@ -270,37 +374,41 @@ export async function GET(req: Request) {
     const page = Math.max(parseInteger(url.searchParams.get("page"), 1), 1);
     const limit = Math.min(Math.max(parseInteger(url.searchParams.get("limit"), 12), 1), 200);
 
+    const itemFields = [...ITEM_BASE_FIELDS, ...ITEM_OPTIONAL_FIELDS];
+
     const filters: any[] = [["disabled", "=", 0]];
 
-    if (STRICT_PUBLISH) filters.push(["vu_show_in_website", "=", 1]);
+    if (STRICT_PUBLISH) {
+      filters.push(["vu_show_in_website", "=", 1]);
+    }
+
     if (brand) filters.push(["brand", "=", brand]);
     if (group) filters.push(["item_group", "=", group]);
     if (category) filters.push(["custom_website_category", "=", category]);
     if (homepageSection) filters.push(["custom_homepage_section", "=", homepageSection]);
 
-    const items = await erpResourceList<ERPItem>("Item", {
-      fields: [
-        "item_code",
-        "item_name",
-        "image",
-        "item_group",
-        "brand",
-        "description",
-        "custom_website_category",
-        "custom_homepage_section",
-        "custom_homepage_sort_order",
-        "disabled",
-        "vu_show_in_website",
-      ],
+    const itemResult = await erpResourceListSafeFields<ERPItem>("Item", {
+      fields: itemFields,
+      required_fields: ["item_code"],
       filters,
       order_by: "item_name asc",
       limit_page_length: 2000,
     });
 
+    const items = itemResult.rows;
+    const itemFieldsUsed = itemResult.fieldsUsed;
+
     if (!items.length) {
       return NextResponse.json({
         products: [],
-        meta: { page, limit, total: 0, pages: 0 },
+        meta: {
+          page,
+          limit,
+          total: 0,
+          pages: 0,
+          warehouse: WEBSITE_WAREHOUSE,
+          dropped_fields: Array.from(itemResult.fieldsDropped),
+        },
       });
     }
 
@@ -358,8 +466,7 @@ export async function GET(req: Request) {
       );
 
       const homepageSortRaw = Number(it.custom_homepage_sort_order);
-      const homepageSort =
-        Number.isFinite(homepageSortRaw) ? homepageSortRaw : null;
+      const homepageSort = Number.isFinite(homepageSortRaw) ? homepageSortRaw : null;
 
       return {
         id: it.item_code,
@@ -376,14 +483,30 @@ export async function GET(req: Request) {
         stock_qty: stock,
         brand: sanitizeString(it.brand),
         item_group: sanitizeString(it.item_group),
-        category: sanitizeString(it.custom_website_category),
-        homepage_section: sanitizeString(it.custom_homepage_section),
-        homepage_sort_order: homepageSort,
+        category: itemFieldsUsed.has("custom_website_category")
+          ? sanitizeString(it.custom_website_category)
+          : "",
+        homepage_section: itemFieldsUsed.has("custom_homepage_section")
+          ? sanitizeString(it.custom_homepage_section)
+          : "",
+        homepage_sort_order: itemFieldsUsed.has("custom_homepage_sort_order")
+          ? homepageSort
+          : null,
         slug,
         route: `/products/${slug}`,
         in_stock: stock > 0,
       };
     });
+
+    products = products.filter((p) => p.stock > 0);
+
+    if (category && itemFieldsUsed.has("custom_website_category")) {
+      products = products.filter((p) => p.category === category);
+    }
+
+    if (homepageSection && itemFieldsUsed.has("custom_homepage_section")) {
+      products = products.filter((p) => p.homepage_section === homepageSection);
+    }
 
     if (minPrice != null || maxPrice != null) {
       products = products.filter((p) => {
@@ -444,6 +567,8 @@ export async function GET(req: Request) {
           total,
           pages,
           warehouse: WEBSITE_WAREHOUSE,
+          price_list: PRICE_LIST,
+          dropped_fields: Array.from(itemResult.fieldsDropped),
           filters: {
             brand,
             group,
