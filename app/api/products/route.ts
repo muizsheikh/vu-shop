@@ -20,6 +20,7 @@ const ERP_KEY = (process.env.ERP_API_KEY || "").trim();
 const ERP_SECRET = (process.env.ERP_API_SECRET || "").trim();
 const PRICE_LIST = (process.env.ERP_PRICE_LIST || "Standard Selling").trim();
 const WEBSITE_WAREHOUSE = (process.env.WEBSITE_WAREHOUSE || "").trim();
+const WEBSITE_COST_CENTER = (process.env.WEBSITE_COST_CENTER || "").trim();
 const STRICT_PUBLISH = (process.env.VU_STRICT_PUBLISH || "1").trim() === "1";
 const PLACEHOLDER_IMAGE = "/images/placeholder.png";
 
@@ -46,6 +47,22 @@ const GALLERY_FIELDS = [
   "alt_text",
   "sort_order",
   "is_primary",
+];
+
+const SALES_ORDER_ITEM_FIELDS = [
+  "parent",
+  "item_code",
+  "qty",
+  "delivered_qty",
+  "warehouse",
+  "docstatus",
+];
+
+const SALES_ORDER_FIELDS = [
+  "name",
+  "status",
+  "docstatus",
+  "cost_center",
 ];
 
 function assertEnv() {
@@ -97,6 +114,22 @@ type ERPGalleryRow = {
   is_primary?: 0 | 1;
 };
 
+type ERPSalesOrderItem = {
+  parent?: string | null;
+  item_code?: string | null;
+  qty?: number | string | null;
+  delivered_qty?: number | string | null;
+  warehouse?: string | null;
+  docstatus?: 0 | 1 | 2;
+};
+
+type ERPSalesOrder = {
+  name?: string | null;
+  status?: string | null;
+  docstatus?: 0 | 1 | 2;
+  cost_center?: string | null;
+};
+
 type GalleryImage = {
   image: string;
   alt_text: string;
@@ -117,6 +150,8 @@ type Product = {
   currency: string;
   stock: number;
   stock_qty: number;
+  actual_stock_qty: number;
+  reserved_by_website_orders: number;
   brand: string;
   item_group: string;
   category: string;
@@ -185,6 +220,11 @@ function toSlug(s: string) {
 
 function sanitizeString(value: unknown, fallback = "") {
   return typeof value === "string" ? value.trim() || fallback : fallback;
+}
+
+function toNumber(value: unknown, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function parsePositiveNumber(value: string | null) {
@@ -343,6 +383,99 @@ async function loadGalleryMap(itemCodes: string[]) {
   return map;
 }
 
+async function loadWebsiteOpenOrderQtyMap(itemCodes: string[]) {
+  const reservedMap = new Map<string, number>();
+
+  if (!itemCodes.length) return reservedMap;
+
+  const allOrderItemRows: ERPSalesOrderItem[] = [];
+  const parentNames = new Set<string>();
+
+  for (const part of chunk(itemCodes, 100)) {
+    const result = await erpResourceListSafeFields<ERPSalesOrderItem>("Sales Order Item", {
+      fields: SALES_ORDER_ITEM_FIELDS,
+      required_fields: ["parent", "item_code", "qty"],
+      filters: [
+        ["item_code", "in", part],
+        ["warehouse", "=", WEBSITE_WAREHOUSE],
+        ["docstatus", "in", [0, 1]],
+      ],
+      limit_page_length: 5000,
+    });
+
+    for (const row of result.rows) {
+      const parent = sanitizeString(row.parent);
+      const itemCode = sanitizeString(row.item_code);
+
+      if (!parent || !itemCode) continue;
+
+      allOrderItemRows.push(row);
+      parentNames.add(parent);
+    }
+  }
+
+  if (!parentNames.size || !allOrderItemRows.length) {
+    return reservedMap;
+  }
+
+  const openParents = new Set<string>();
+
+  for (const part of chunk(Array.from(parentNames), 100)) {
+    const result = await erpResourceListSafeFields<ERPSalesOrder>("Sales Order", {
+      fields: SALES_ORDER_FIELDS,
+      required_fields: ["name"],
+      filters: [
+        ["name", "in", part],
+        ["docstatus", "in", [0, 1]],
+      ],
+      limit_page_length: 1000,
+    });
+
+    const fieldsUsed = result.fieldsUsed;
+
+    for (const so of result.rows) {
+      const name = sanitizeString(so.name);
+      const status = sanitizeString(so.status).toLowerCase();
+      const docstatus = toNumber(so.docstatus, 0);
+
+      if (!name) continue;
+      if (docstatus === 2) continue;
+
+      if (["cancelled", "closed", "completed"].includes(status)) {
+        continue;
+      }
+
+      if (
+        WEBSITE_COST_CENTER &&
+        fieldsUsed.has("cost_center") &&
+        sanitizeString(so.cost_center) &&
+        sanitizeString(so.cost_center) !== WEBSITE_COST_CENTER
+      ) {
+        continue;
+      }
+
+      openParents.add(name);
+    }
+  }
+
+  for (const row of allOrderItemRows) {
+    const parent = sanitizeString(row.parent);
+    const itemCode = sanitizeString(row.item_code);
+
+    if (!parent || !itemCode || !openParents.has(parent)) continue;
+
+    const orderedQty = Math.max(toNumber(row.qty, 0), 0);
+    const deliveredQty = Math.max(toNumber(row.delivered_qty, 0), 0);
+    const pendingQty = Math.max(orderedQty - deliveredQty, 0);
+
+    if (pendingQty <= 0) continue;
+
+    reservedMap.set(itemCode, (reservedMap.get(itemCode) || 0) + pendingQty);
+  }
+
+  return reservedMap;
+}
+
 function matchesSearch(p: Product, q: string) {
   const qq = q.toLowerCase();
   return (
@@ -407,6 +540,7 @@ export async function GET(req: Request) {
           total: 0,
           pages: 0,
           warehouse: WEBSITE_WAREHOUSE,
+          cost_center: WEBSITE_COST_CENTER,
           dropped_fields: Array.from(itemResult.fieldsDropped),
         },
       });
@@ -414,7 +548,7 @@ export async function GET(req: Request) {
 
     const codes = items.map((it) => it.item_code).filter(Boolean);
 
-    const [priceChunks, binChunks, galleryMap] = await Promise.all([
+    const [priceChunks, binChunks, galleryMap, websiteReservedMap] = await Promise.all([
       Promise.all(
         chunk(codes).map((part) =>
           erpResourceList<ERPItemPrice>("Item Price", {
@@ -440,6 +574,7 @@ export async function GET(req: Request) {
         )
       ),
       loadGalleryMap(codes),
+      loadWebsiteOpenOrderQtyMap(codes),
     ]);
 
     const prices = priceChunks.flat();
@@ -451,7 +586,11 @@ export async function GET(req: Request) {
     let products: Product[] = items.map((it) => {
       const itemName = sanitizeString(it.item_name, it.item_code);
       const slug = toSlug(itemName || it.item_code);
-      const stock = stockMap.get(it.item_code) ?? 0;
+
+      const actualStock = Math.max(stockMap.get(it.item_code) ?? 0, 0);
+      const reservedByWebsiteOrders = Math.max(websiteReservedMap.get(it.item_code) ?? 0, 0);
+      const availableStock = Math.max(actualStock - reservedByWebsiteOrders, 0);
+
       const priceRow = priceMap.get(it.item_code);
       const price = priceRow ? Number(priceRow.price_list_rate) : null;
 
@@ -479,8 +618,12 @@ export async function GET(req: Request) {
         gallery,
         price,
         currency: sanitizeString(priceRow?.currency, "PKR"),
-        stock,
-        stock_qty: stock,
+
+        stock: availableStock,
+        stock_qty: availableStock,
+        actual_stock_qty: actualStock,
+        reserved_by_website_orders: reservedByWebsiteOrders,
+
         brand: sanitizeString(it.brand),
         item_group: sanitizeString(it.item_group),
         category: itemFieldsUsed.has("custom_website_category")
@@ -494,11 +637,11 @@ export async function GET(req: Request) {
           : null,
         slug,
         route: `/products/${slug}`,
-        in_stock: stock > 0,
+        in_stock: availableStock > 0,
       };
     });
 
-    products = products.filter((p) => p.stock > 0);
+    products = products.filter((p) => p.stock_qty > 0);
 
     if (category && itemFieldsUsed.has("custom_website_category")) {
       products = products.filter((p) => p.category === category);
@@ -567,7 +710,9 @@ export async function GET(req: Request) {
           total,
           pages,
           warehouse: WEBSITE_WAREHOUSE,
+          cost_center: WEBSITE_COST_CENTER,
           price_list: PRICE_LIST,
+          stock_mode: "actual_qty_minus_open_website_sales_orders",
           dropped_fields: Array.from(itemResult.fieldsDropped),
           filters: {
             brand,
