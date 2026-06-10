@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import AddToCartButton from "./ui";
+import ImageGallery from "./ImageGallery";
 
 export const dynamic = "force-dynamic";
 
@@ -64,10 +65,10 @@ function truncate(text: string, max = 170) {
 
 function getShortIntro(product: Product) {
   const shortRaw = stripHtml(product.short_description);
-  if (shortRaw) return truncate(shortRaw, 220);
+  if (shortRaw) return truncate(shortRaw, 230);
 
   const longRaw = stripHtml(product.long_description || product.description);
-  if (longRaw) return truncate(longRaw, 190);
+  if (longRaw) return truncate(longRaw, 210);
 
   return "Original quality product available at Vape Ustad with live website stock and fast COD ordering.";
 }
@@ -371,42 +372,11 @@ export default async function ProductDetail({
           ) : null}
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
-          <div className="space-y-4">
-            <div className="overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
-              <div className="aspect-square w-full overflow-hidden bg-neutral-50">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={mainImage}
-                  alt={ui.name}
-                  className="h-full w-full object-contain"
-                />
-              </div>
-            </div>
+        <div className="grid items-stretch gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12">
+          <ImageGallery images={productImages} productName={ui.name} />
 
-            {productImages.length > 1 ? (
-              <div className="grid grid-cols-4 gap-3 sm:grid-cols-5">
-                {productImages.slice(0, 8).map((img, idx) => (
-                  <div
-                    key={`${img}-${idx}`}
-                    className="overflow-hidden rounded-2xl border border-neutral-200 bg-white"
-                  >
-                    <div className="aspect-square bg-neutral-50">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={img}
-                        alt={`${ui.name} preview ${idx + 1}`}
-                        className="h-full w-full object-contain"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="flex flex-col">
-            <div className="rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)] md:p-8">
+          <div className="flex">
+            <div className="flex h-full w-full flex-col justify-center rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.06)] md:p-8 lg:min-h-[640px]">
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 <span
                   className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${stockMeta.className}`}
