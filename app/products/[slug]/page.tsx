@@ -25,6 +25,8 @@ type Product = {
   gallery?: GalleryImage[] | null;
   price: number | null;
   currency?: string | null;
+  short_description?: string | null;
+  long_description?: string | null;
   description?: string | null;
   stock?: number | null;
   stock_qty?: number | null;
@@ -54,19 +56,20 @@ function stripHtml(html?: string | null) {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function truncate(text: string, max = 160) {
+function truncate(text: string, max = 170) {
   const clean = text.trim();
   if (clean.length <= max) return clean;
   return `${clean.slice(0, max - 1).trim()}…`;
 }
 
 function getShortIntro(product: Product) {
-  const raw = stripHtml(product.description);
-  if (!raw) {
-    return "Original quality product available at Vape Ustad with live website stock and fast COD ordering.";
-  }
+  const shortRaw = stripHtml(product.short_description);
+  if (shortRaw) return truncate(shortRaw, 220);
 
-  return truncate(raw, 190);
+  const longRaw = stripHtml(product.long_description || product.description);
+  if (longRaw) return truncate(longRaw, 190);
+
+  return "Original quality product available at Vape Ustad with live website stock and fast COD ordering.";
 }
 
 function absoluteUrl(path?: string | null) {
@@ -163,7 +166,10 @@ async function loadRelatedProducts(product: Product): Promise<Product[]> {
 }
 
 function buildProductDescription(product: Product) {
-  const raw = stripHtml(product.description);
+  const raw = stripHtml(
+    product.short_description || product.long_description || product.description
+  );
+
   if (raw) return truncate(raw, 160);
 
   const parts = [
@@ -289,7 +295,8 @@ export default async function ProductDetail({
   const mainImage = productImages[0] || DEFAULT_IMAGE;
   const productSlug = p.slug || slug;
   const shortIntro = getShortIntro(p);
-  const fullDescriptionText = stripHtml(p.description);
+  const fullDescriptionHtml = p.long_description || p.description || "";
+  const fullDescriptionText = stripHtml(fullDescriptionHtml);
 
   const ui = {
     id: p.item_code,
@@ -298,7 +305,7 @@ export default async function ProductDetail({
     price: p.price ?? 0,
     image: mainImage,
     images: productImages,
-    description: p.description || "",
+    description: fullDescriptionHtml,
   };
 
   const metadataDescription = buildProductDescription(p);
@@ -484,7 +491,7 @@ export default async function ProductDetail({
           </div>
         </div>
 
-        {ui.description ? (
+        {fullDescriptionHtml || !fullDescriptionText ? (
           <div className="mt-10 rounded-[28px] border border-neutral-200 bg-white p-6 shadow-[0_20px_60px_rgba(0,0,0,0.05)] md:p-8">
             <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -501,17 +508,17 @@ export default async function ProductDetail({
               </div>
             </div>
 
-            <div
-              className="prose max-w-none prose-p:text-neutral-700 prose-li:text-neutral-700 prose-strong:text-neutral-900"
-              dangerouslySetInnerHTML={{ __html: ui.description }}
-            />
-
-            {!fullDescriptionText ? (
+            {fullDescriptionHtml ? (
+              <div
+                className="prose max-w-none prose-p:text-neutral-700 prose-li:text-neutral-700 prose-strong:text-neutral-900 [&_img]:mx-auto [&_img]:my-8 [&_img]:block [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-2xl [&_img]:border [&_img]:border-neutral-100"
+                dangerouslySetInnerHTML={{ __html: fullDescriptionHtml }}
+              />
+            ) : (
               <p className="text-neutral-600">
                 Premium vaping product from Vape Ustad. Original quality,
                 carefully selected stock, and a smooth shopping experience.
               </p>
-            ) : null}
+            )}
           </div>
         ) : null}
 

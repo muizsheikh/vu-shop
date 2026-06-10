@@ -38,7 +38,10 @@ const ITEM_OPTIONAL_FIELDS = [
   "custom_website_category",
   "custom_homepage_section",
   "custom_homepage_sort_order",
+  "custom_website_gallery_images",
   "vu_show_in_website",
+  "vu_website_short_description",
+  "vu_website_long_description",
   "web_long_description",
   "website_description",
   "short_description",
@@ -89,8 +92,11 @@ type ERPItem = {
   custom_website_category?: string | null;
   custom_homepage_section?: string | null;
   custom_homepage_sort_order?: number | null;
+  custom_website_gallery_images?: ERPGalleryRow[] | null;
   disabled?: 0 | 1;
   vu_show_in_website?: 0 | 1;
+  vu_website_short_description?: string | null;
+  vu_website_long_description?: string | null;
   web_long_description?: string | null;
   website_description?: string | null;
   short_description?: string | null;
@@ -116,6 +122,7 @@ type ERPGalleryRow = {
   alt_text?: string | null;
   sort_order?: number | null;
   is_primary?: 0 | 1;
+  idx?: number | null;
 };
 
 type ERPSalesOrderItem = {
@@ -149,6 +156,8 @@ type Product = {
   name: string;
   item_code: string;
   item_name: string;
+  short_description: string;
+  long_description: string;
   description: string;
   image: string;
   images: string[];
@@ -215,36 +224,12 @@ function isPrivatePath(p?: string | null) {
   return /^\/?private\//i.test(p) || p.includes("/private/files/");
 }
 
-function toSlug(s: string) {
-  return (s || "")
-    .toString()
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)+/g, "");
-}
-
-function lastSegment(p?: string | null) {
-  return (p || "").split("/").filter(Boolean).pop() || "";
-}
-
-function sanitizeString(value: unknown, fallback = "") {
-  return typeof value === "string" ? value.trim() || fallback : fallback;
-}
-
 function normalizeFileUrl(raw?: string | null) {
   const value = sanitizeString(raw);
-
   if (!value) return "";
 
-  if (/^(data:|mailto:|tel:|#)/i.test(value)) {
-    return value;
-  }
-
-  if (/^https?:\/\//i.test(value)) {
-    return value;
-  }
+  if (/^(data:|mailto:|tel:|#)/i.test(value)) return value;
+  if (/^https?:\/\//i.test(value)) return value;
 
   if (/^\/?files\//i.test(value) || /^\/?private\/files\//i.test(value)) {
     return resolveAbsolute(value) || value;
@@ -263,7 +248,6 @@ function normalizeSrcSet(raw?: string | null) {
       const bits = part.trim().split(/\s+/);
       const url = bits.shift() || "";
       const suffix = bits.join(" ");
-
       const normalized = normalizeFileUrl(url);
       return [normalized, suffix].filter(Boolean).join(" ");
     })
@@ -273,17 +257,13 @@ function normalizeSrcSet(raw?: string | null) {
 
 function normalizeDescriptionHtml(raw?: string | null) {
   let html = sanitizeString(raw);
-
   if (!html) return "";
 
   html = html.replace(
     /<img\b[^>]*\bsrc=(["']?)([^"'\s>]+)\1[^>]*>/gi,
     (tag, _quote, src) => {
       const source = sanitizeString(src);
-
-      if (!source || isPrivatePath(source)) {
-        return "";
-      }
+      if (!source || isPrivatePath(source)) return "";
 
       const absolute = normalizeFileUrl(source);
 
@@ -312,6 +292,35 @@ function normalizeDescriptionHtml(raw?: string | null) {
   html = html.replace(/<p>\s*<\/p>/gi, "");
 
   return html;
+}
+
+function stripHtml(html?: string | null) {
+  if (!html) return "";
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function truncate(text: string, max = 210) {
+  const clean = text.trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, max - 1).trim()}…`;
+}
+
+function toSlug(s: string) {
+  return (s || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)+/g, "");
+}
+
+function lastSegment(p?: string | null) {
+  return (p || "").split("/").filter(Boolean).pop() || "";
+}
+
+function sanitizeString(value: unknown, fallback = "") {
+  return typeof value === "string" ? value.trim() || fallback : fallback;
 }
 
 function toNumber(value: unknown, fallback = 0) {
@@ -409,7 +418,7 @@ async function erpResourceListSafeFields<T>(
   const dropped = new Set<string>();
   const required = new Set(opts.required_fields || []);
 
-  for (let attempt = 0; attempt < 25; attempt++) {
+  for (let attempt = 0; attempt < 30; attempt++) {
     try {
       const rows = await erpResourceList<T>(doctype, {
         fields,
@@ -448,6 +457,30 @@ async function erpResourceListSafeFields<T>(
   throw new Error(`${doctype}: too many field retry attempts`);
 }
 
+function normalizeGalleryRows(rows?: ERPGalleryRow[] | null) {
+  const gallery: GalleryImage[] = [];
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const abs = resolveAbsolute(row.image);
+
+    if (!abs || isPrivatePath(row.image)) continue;
+
+    gallery.push({
+      image: abs,
+      alt_text: sanitizeString(row.alt_text),
+      sort_order: Number(row.sort_order || row.idx || 0),
+      is_primary: row.is_primary === 1,
+    });
+  }
+
+  gallery.sort((a, b) => {
+    if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
+    return a.sort_order - b.sort_order;
+  });
+
+  return gallery;
+}
+
 async function loadGalleryMap(itemCodes: string[]) {
   const map = new Map<string, GalleryImage[]>();
 
@@ -463,17 +496,13 @@ async function loadGalleryMap(itemCodes: string[]) {
 
       for (const row of result.rows) {
         const parent = sanitizeString(row.parent);
-        const abs = resolveAbsolute(row.image);
+        if (!parent) continue;
 
-        if (!parent || !abs || isPrivatePath(row.image)) continue;
+        const normalized = normalizeGalleryRows([row]);
+        if (!normalized.length) continue;
 
         const current = map.get(parent) || [];
-        current.push({
-          image: abs,
-          alt_text: sanitizeString(row.alt_text),
-          sort_order: Number(row.sort_order || 0),
-          is_primary: row.is_primary === 1,
-        });
+        current.push(...normalized);
         map.set(parent, current);
       }
     }
@@ -601,7 +630,9 @@ function matchesSearch(p: Product, q: string) {
     p.item_group.toLowerCase().includes(qq) ||
     p.category.toLowerCase().includes(qq) ||
     p.homepage_section.toLowerCase().includes(qq) ||
-    p.description.toLowerCase().includes(qq)
+    p.description.toLowerCase().includes(qq) ||
+    p.short_description.toLowerCase().includes(qq) ||
+    p.long_description.toLowerCase().includes(qq)
   );
 }
 
@@ -620,27 +651,36 @@ function matchesSlugOrCode(p: Product, value: string) {
   );
 }
 
-function getBestDescription(it: ERPItem, fieldsUsed: Set<string>) {
-  const candidates = [
-    fieldsUsed.has("web_long_description") ? it.web_long_description : "",
-    fieldsUsed.has("website_description") ? it.website_description : "",
-    it.description,
-    fieldsUsed.has("short_description") ? it.short_description : "",
-  ];
+function getDescriptionParts(it: ERPItem) {
+  const shortRaw =
+    it.vu_website_short_description ||
+    it.short_description ||
+    "";
 
-  for (const c of candidates) {
-    const text = normalizeDescriptionHtml(c);
-    if (text) return text;
-  }
+  const longRaw =
+    it.vu_website_long_description ||
+    it.web_long_description ||
+    it.website_description ||
+    it.description ||
+    "";
 
-  return "";
+  const longDescription = normalizeDescriptionHtml(longRaw);
+  const shortDescription =
+    normalizeDescriptionHtml(shortRaw) ||
+    truncate(stripHtml(longDescription), 220);
+
+  return {
+    shortDescription,
+    longDescription,
+    description: longDescription || shortDescription,
+  };
 }
 
-function getBestItemImage(it: ERPItem, fieldsUsed: Set<string>) {
+function getBestItemImage(it: ERPItem, fieldsUsed?: Set<string>) {
   const candidates = [
-    fieldsUsed.has("website_image") ? it.website_image : "",
+    fieldsUsed?.has("website_image") ? it.website_image : it.website_image,
     it.image,
-    fieldsUsed.has("thumbnail") ? it.thumbnail : "",
+    fieldsUsed?.has("thumbnail") ? it.thumbnail : it.thumbnail,
   ];
 
   for (const c of candidates) {
@@ -648,6 +688,39 @@ function getBestItemImage(it: ERPItem, fieldsUsed: Set<string>) {
   }
 
   return null;
+}
+
+async function enrichProductFromFullItem(product: Product) {
+  try {
+    const full = await erpResourceGet<ERPItem>("Item", product.item_code);
+
+    if (!full) return product;
+
+    const descriptions = getDescriptionParts(full);
+    const fullGallery = normalizeGalleryRows(full.custom_website_gallery_images);
+    const gallery = fullGallery.length ? fullGallery : product.gallery;
+
+    const fullImage = getBestItemImage(full) || product.image;
+    const firstGalleryImage = gallery[0]?.image || null;
+    const mainImage = firstGalleryImage || fullImage || product.image || PLACEHOLDER_IMAGE;
+
+    const images = Array.from(
+      new Set([mainImage, ...gallery.map((g) => g.image), fullImage, ...product.images].filter(Boolean) as string[])
+    );
+
+    return {
+      ...product,
+      short_description: descriptions.shortDescription || product.short_description,
+      long_description: descriptions.longDescription || product.long_description,
+      description: descriptions.description || product.description,
+      gallery,
+      image: mainImage,
+      images,
+    };
+  } catch (err) {
+    console.warn(`Full Item enrichment skipped for ${product.item_code}:`, err);
+    return product;
+  }
 }
 
 export async function GET(req: Request) {
@@ -670,6 +743,7 @@ export async function GET(req: Request) {
     const page = Math.max(parseInteger(url.searchParams.get("page"), 1), 1);
     const limit = Math.min(Math.max(parseInteger(url.searchParams.get("limit"), 12), 1), 200);
 
+    const detailMode = Boolean(slug || itemCode);
     const itemFields = [...ITEM_BASE_FIELDS, ...ITEM_OPTIONAL_FIELDS];
 
     const filters: any[] = [["disabled", "=", 0]];
@@ -759,6 +833,8 @@ export async function GET(req: Request) {
       const priceRow = priceMap.get(it.item_code);
       const price = priceRow ? Number(priceRow.price_list_rate) : null;
 
+      const descriptions = getDescriptionParts(it);
+
       const rawItemImage = getBestItemImage(it, itemFieldsUsed);
       const gallery = galleryMap.get(it.item_code) || [];
 
@@ -778,7 +854,9 @@ export async function GET(req: Request) {
         name: itemName,
         item_code: it.item_code,
         item_name: itemName,
-        description: getBestDescription(it, itemFieldsUsed),
+        short_description: descriptions.shortDescription,
+        long_description: descriptions.longDescription,
+        description: descriptions.description,
         image: mainImage,
         images,
         gallery,
@@ -813,6 +891,10 @@ export async function GET(req: Request) {
 
     if (itemCode) {
       products = products.filter((p) => p.item_code === itemCode);
+    }
+
+    if (detailMode && products[0]) {
+      products[0] = await enrichProductFromFullItem(products[0]);
     }
 
     if (!includeUnavailable) {
@@ -880,7 +962,7 @@ export async function GET(req: Request) {
     return NextResponse.json(
       {
         products: paged,
-        product: slug || itemCode ? products[0] || null : null,
+        product: detailMode ? products[0] || null : null,
         meta: {
           page,
           limit,
@@ -891,7 +973,7 @@ export async function GET(req: Request) {
           price_list: PRICE_LIST,
           stock_mode: "actual_qty_minus_open_website_sales_orders",
           include_unavailable: includeUnavailable,
-          detail_mode: Boolean(slug || itemCode),
+          detail_mode: detailMode,
           dropped_fields: Array.from(itemResult.fieldsDropped),
           filters: {
             brand,
