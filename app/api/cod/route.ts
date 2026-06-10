@@ -37,6 +37,14 @@ const PREFERRED_TERRITORIES = [
   "All Territories",
 ].filter(Boolean);
 
+const SALES_ORDER_FIELDS = [
+  "name",
+  "status",
+  "docstatus",
+  "cost_center",
+  "set_warehouse",
+];
+
 function normBase(u: string) {
   let x = (u || "").trim();
   if (x && !/^https?:\/\//i.test(x)) x = `https://${x}`;
@@ -49,9 +57,7 @@ function getEnv() {
   const ERP_API_SECRET = (process.env.ERP_API_SECRET || "").trim();
 
   if (!ERP_BASE_URL || !ERP_API_KEY || !ERP_API_SECRET) {
-    throw new Error(
-      "ERP credentials missing (ERP_BASE_URL, ERP_API_KEY, ERP_API_SECRET)"
-    );
+    throw new Error("ERP credentials missing (ERP_BASE_URL, ERP_API_KEY, ERP_API_SECRET)");
   }
 
   if (!WEBSITE_WAREHOUSE) {
@@ -87,15 +93,13 @@ async function safeJson(res: Response) {
 
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText}: ${txt.slice(0, 400)}`);
+    throw new Error(`HTTP ${res.status} ${res.statusText}: ${txt.slice(0, 700)}`);
   }
 
   if (ct.includes("application/json")) return res.json();
 
   const txt = await res.text();
-  throw new Error(
-    `HTTP ${res.status} ${res.statusText} (non-JSON): ${txt.slice(0, 400)}`
-  );
+  throw new Error(`HTTP ${res.status} ${res.statusText} (non-JSON): ${txt.slice(0, 700)}`);
 }
 
 async function erpnextFetch(path: string, opts: RequestInit = {}) {
@@ -163,6 +167,11 @@ function cleanMoney(value: unknown, fallback = 0) {
   return Math.max(0, Math.round(number));
 }
 
+function toNumber(value: unknown, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 type IncomingCartItem = {
   item_code?: string;
   id?: string;
@@ -184,6 +193,54 @@ type OrderSettings = {
   minimum_order_amount: number;
   cod_enabled: boolean;
 };
+
+type ERPBin = {
+  item_code: string;
+  actual_qty: number;
+};
+
+type ERPSalesOrderItem = {
+  item_code?: string | null;
+  qty?: number | string | null;
+  delivered_qty?: number | string | null;
+  warehouse?: string | null;
+};
+
+type ERPSalesOrder = {
+  name?: string | null;
+  status?: string | null;
+  docstatus?: 0 | 1 | 2;
+  cost_center?: string | null;
+  set_warehouse?: string | null;
+};
+
+type ERPSalesOrderFull = ERPSalesOrder & {
+  items?: ERPSalesOrderItem[];
+};
+
+function chunk<T>(arr: T[], size = 100) {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function aggregateCartItems(items: NormalizedCartItem[]) {
+  const map = new Map<string, NormalizedCartItem>();
+
+  for (const item of items) {
+    const existing = map.get(item.item_code);
+
+    if (!existing) {
+      map.set(item.item_code, { ...item });
+      continue;
+    }
+
+    existing.qty += item.qty;
+    existing.amount = Math.round(existing.qty * existing.rate * 100) / 100;
+  }
+
+  return Array.from(map.values());
+}
 
 function normalizeCartItems(rawItems: unknown): NormalizedCartItem[] {
   if (!Array.isArray(rawItems)) {
@@ -209,11 +266,13 @@ function normalizeCartItems(rawItems: unknown): NormalizedCartItem[] {
     });
   }
 
-  if (!items.length) {
+  const aggregated = aggregateCartItems(items);
+
+  if (!aggregated.length) {
     throw new Error("Cart empty or invalid");
   }
 
-  return items;
+  return aggregated;
 }
 
 async function getOrderSettings(): Promise<OrderSettings> {
@@ -252,6 +311,38 @@ async function getDoctypeList(
   );
 
   return Array.isArray(json?.data) ? json.data : [];
+}
+
+async function getDoctypeListFiltered(args: {
+  doctype: string;
+  fields: string[];
+  filters?: any[];
+  limit?: number;
+  start?: number;
+  orderBy?: string;
+}) {
+  const params = [
+    `fields=${enc(args.fields)}`,
+    `limit_page_length=${args.limit ?? 200}`,
+    `limit_start=${args.start ?? 0}`,
+  ];
+
+  if (args.filters?.length) {
+    params.push(`filters=${enc(args.filters)}`);
+  }
+
+  if (args.orderBy) {
+    params.push(`order_by=${encodeURIComponent(args.orderBy)}`);
+  }
+
+  const json = await erpnextFetch(`${args.doctype}?${params.join("&")}`);
+
+  return Array.isArray(json?.data) ? json.data : [];
+}
+
+async function getResource<T>(doctype: string, name: string): Promise<T | null> {
+  const json = await erpnextFetch(`${doctype}/${encodeURIComponent(name)}`);
+  return json?.data ? (json.data as T) : null;
 }
 
 async function resolvePreferredLinkName(args: {
@@ -477,6 +568,176 @@ function getTomorrowDate() {
   return d.toISOString().slice(0, 10);
 }
 
+async function loadActualStockMap(itemCodes: string[]) {
+  const stockMap = new Map<string, number>();
+
+  for (const part of chunk(itemCodes, 100)) {
+    const rows = await getDoctypeListFiltered({
+      doctype: "Bin",
+      fields: ["item_code", "actual_qty"],
+      filters: [
+        ["item_code", "in", part],
+        ["warehouse", "=", WEBSITE_WAREHOUSE],
+      ],
+      limit: 2000,
+    });
+
+    for (const row of rows as ERPBin[]) {
+      const itemCode = sanitizeString(row.item_code);
+      if (!itemCode) continue;
+      stockMap.set(itemCode, Math.max(toNumber(row.actual_qty, 0), 0));
+    }
+  }
+
+  return stockMap;
+}
+
+function isOpenWebsiteSalesOrder(so: ERPSalesOrder) {
+  const name = sanitizeString(so.name);
+  const status = sanitizeString(so.status).toLowerCase();
+  const docstatus = toNumber(so.docstatus, 0);
+
+  if (!name) return false;
+  if (docstatus === 2) return false;
+
+  if (["cancelled", "closed", "completed"].includes(status)) {
+    return false;
+  }
+
+  if (WEBSITE_COST_CENTER) {
+    const soCostCenter = sanitizeString(so.cost_center);
+    if (soCostCenter && soCostCenter !== WEBSITE_COST_CENTER) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function loadOpenWebsiteSalesOrders() {
+  const rows: ERPSalesOrder[] = [];
+  const pageSize = 500;
+
+  for (let start = 0; start < 5000; start += pageSize) {
+    const filters: any[] = [["docstatus", "in", [0, 1]]];
+
+    if (WEBSITE_COST_CENTER) {
+      filters.push(["cost_center", "=", WEBSITE_COST_CENTER]);
+    }
+
+    const pageRows = await getDoctypeListFiltered({
+      doctype: "Sales Order",
+      fields: SALES_ORDER_FIELDS,
+      filters,
+      limit: pageSize,
+      start,
+      orderBy: "modified desc",
+    });
+
+    const openRows = (pageRows as ERPSalesOrder[]).filter(isOpenWebsiteSalesOrder);
+    rows.push(...openRows);
+
+    if (pageRows.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+async function loadReservedByOpenWebsiteOrdersMap(itemCodes: string[]) {
+  const reservedMap = new Map<string, number>();
+
+  if (!itemCodes.length) return reservedMap;
+
+  const itemCodeSet = new Set(itemCodes);
+  const openOrders = await loadOpenWebsiteSalesOrders();
+
+  if (!openOrders.length) return reservedMap;
+
+  for (const part of chunk(openOrders, 20)) {
+    const fullOrders = await Promise.all(
+      part.map((so) => {
+        const name = sanitizeString(so.name);
+        return name ? getResource<ERPSalesOrderFull>("Sales Order", name) : Promise.resolve(null);
+      })
+    );
+
+    for (const so of fullOrders) {
+      if (!so || !isOpenWebsiteSalesOrder(so)) continue;
+
+      const parentWarehouse = sanitizeString(so.set_warehouse);
+      const items = Array.isArray(so.items) ? so.items : [];
+
+      for (const row of items) {
+        const itemCode = sanitizeString(row.item_code);
+        if (!itemCode || !itemCodeSet.has(itemCode)) continue;
+
+        const rowWarehouse = sanitizeString(row.warehouse) || parentWarehouse;
+
+        if (rowWarehouse && rowWarehouse !== WEBSITE_WAREHOUSE) {
+          continue;
+        }
+
+        const orderedQty = Math.max(toNumber(row.qty, 0), 0);
+        const deliveredQty = Math.max(toNumber(row.delivered_qty, 0), 0);
+        const pendingQty = Math.max(orderedQty - deliveredQty, 0);
+
+        if (pendingQty <= 0) continue;
+
+        reservedMap.set(itemCode, (reservedMap.get(itemCode) || 0) + pendingQty);
+      }
+    }
+  }
+
+  return reservedMap;
+}
+
+async function validateWebsiteStock(items: NormalizedCartItem[]) {
+  const itemCodes = items.map((item) => item.item_code);
+
+  const [actualStockMap, reservedMap] = await Promise.all([
+    loadActualStockMap(itemCodes),
+    loadReservedByOpenWebsiteOrdersMap(itemCodes),
+  ]);
+
+  const errors: Array<{
+    item_code: string;
+    item_name: string;
+    requested_qty: number;
+    actual_stock_qty: number;
+    reserved_by_website_orders: number;
+    available_qty: number;
+  }> = [];
+
+  for (const item of items) {
+    const actualStock = Math.max(actualStockMap.get(item.item_code) || 0, 0);
+    const reservedQty = Math.max(reservedMap.get(item.item_code) || 0, 0);
+    const availableQty = Math.max(actualStock - reservedQty, 0);
+
+    if (item.qty > availableQty) {
+      errors.push({
+        item_code: item.item_code,
+        item_name: item.item_name,
+        requested_qty: item.qty,
+        actual_stock_qty: actualStock,
+        reserved_by_website_orders: reservedQty,
+        available_qty: availableQty,
+      });
+    }
+  }
+
+  if (errors.length) {
+    return {
+      ok: false,
+      errors,
+    };
+  }
+
+  return {
+    ok: true,
+    errors: [],
+  };
+}
+
 function buildSalesOrderItems(items: NormalizedCartItem[], deliveryCharge: number) {
   const productItems = items.map((it) => ({
     item_code: it.item_code,
@@ -514,7 +775,7 @@ function buildOrderRemarks(
 
   const lines = items.map(
     (it) =>
-      `• ${it.item_name} (${it.item_code}) × ${it.qty} @ Rs ${it.rate.toLocaleString()} = Rs ${it.amount.toLocaleString()}`
+      `- ${it.item_name} (${it.item_code}) x ${it.qty} @ Rs ${it.rate.toLocaleString()} = Rs ${it.amount.toLocaleString()}`
   );
 
   return [
@@ -576,6 +837,19 @@ export async function POST(req: Request) {
           current_subtotal: productTotal,
         },
         { status: 400 }
+      );
+    }
+
+    const stockValidation = await validateWebsiteStock(items);
+
+    if (!stockValidation.ok) {
+      return NextResponse.json(
+        {
+          error: "Some items are no longer available in the requested quantity.",
+          code: "INSUFFICIENT_WEBSITE_STOCK",
+          items: stockValidation.errors,
+        },
+        { status: 409 }
       );
     }
 
@@ -660,6 +934,7 @@ export async function POST(req: Request) {
       },
       warehouse: WEBSITE_WAREHOUSE,
       cost_center: WEBSITE_COST_CENTER,
+      stock_mode: "actual_qty_minus_open_website_sales_orders",
     });
   } catch (err: any) {
     console.error("POST /api/cod failed:", err);
