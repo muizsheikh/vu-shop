@@ -233,6 +233,87 @@ function sanitizeString(value: unknown, fallback = "") {
   return typeof value === "string" ? value.trim() || fallback : fallback;
 }
 
+function normalizeFileUrl(raw?: string | null) {
+  const value = sanitizeString(raw);
+
+  if (!value) return "";
+
+  if (/^(data:|mailto:|tel:|#)/i.test(value)) {
+    return value;
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  if (/^\/?files\//i.test(value) || /^\/?private\/files\//i.test(value)) {
+    return resolveAbsolute(value) || value;
+  }
+
+  return value;
+}
+
+function normalizeSrcSet(raw?: string | null) {
+  const value = sanitizeString(raw);
+  if (!value) return "";
+
+  return value
+    .split(",")
+    .map((part) => {
+      const bits = part.trim().split(/\s+/);
+      const url = bits.shift() || "";
+      const suffix = bits.join(" ");
+
+      const normalized = normalizeFileUrl(url);
+      return [normalized, suffix].filter(Boolean).join(" ");
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+function normalizeDescriptionHtml(raw?: string | null) {
+  let html = sanitizeString(raw);
+
+  if (!html) return "";
+
+  html = html.replace(
+    /<img\b[^>]*\bsrc=(["']?)([^"'\s>]+)\1[^>]*>/gi,
+    (tag, _quote, src) => {
+      const source = sanitizeString(src);
+
+      if (!source || isPrivatePath(source)) {
+        return "";
+      }
+
+      const absolute = normalizeFileUrl(source);
+
+      return String(tag)
+        .replace(/\ssrc=(["']?)[^"'\s>]+\1/i, ` src="${absolute}"`)
+        .replace(/\ssrcset=(["'])([^"']+)\1/i, (_m: string, _q: string, srcset: string) => {
+          const normalizedSrcset = normalizeSrcSet(srcset);
+          return normalizedSrcset ? ` srcset="${normalizedSrcset}"` : "";
+        });
+    }
+  );
+
+  html = html.replace(
+    /\s(src|href)=(["'])(\/?files\/[^"']+)\2/gi,
+    (_m, attr, quote, src) => ` ${attr}=${quote}${normalizeFileUrl(src)}${quote}`
+  );
+
+  html = html.replace(
+    /\s(srcset)=(["'])([^"']+)\2/gi,
+    (_m, attr, quote, srcset) => {
+      const normalizedSrcset = normalizeSrcSet(srcset);
+      return normalizedSrcset ? ` ${attr}=${quote}${normalizedSrcset}${quote}` : "";
+    }
+  );
+
+  html = html.replace(/<p>\s*<\/p>/gi, "");
+
+  return html;
+}
+
 function toNumber(value: unknown, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -548,7 +629,7 @@ function getBestDescription(it: ERPItem, fieldsUsed: Set<string>) {
   ];
 
   for (const c of candidates) {
-    const text = sanitizeString(c);
+    const text = normalizeDescriptionHtml(c);
     if (text) return text;
   }
 
